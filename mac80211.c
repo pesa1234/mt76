@@ -448,7 +448,6 @@ mt76_phy_init(struct mt76_phy *phy, struct ieee80211_hw *hw)
 			WIPHY_FLAG_AP_UAPSD;
 
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_CQM_RSSI_LIST);
-	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_AIRTIME_FAIRNESS);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_AQL);
 
 	wiphy->available_antennas_tx = phy->antenna_mask;
