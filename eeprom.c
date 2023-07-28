@@ -343,7 +343,7 @@ s8 mt76_get_rate_power_limits(struct mt76_phy *phy,
 	u32 ru_rates = ARRAY_SIZE(dest->ru[0]);
 	char band;
 	size_t len;
-	s8 max_power = 0;
+	s8 max_power = -127;
 	s8 txs_delta;
 
 	if (!mcs_rates)
