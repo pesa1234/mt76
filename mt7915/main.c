@@ -738,6 +738,27 @@ mt7915_channel_switch_beacon(struct ieee80211_hw *hw,
 	mutex_unlock(&dev->mt76.mutex);
 }
 
+static int
+mt7915_post_channel_switch(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
+{
+	struct mt7915_phy *phy = mt7915_hw_phy(hw);
+	struct cfg80211_chan_def *chandef = &phy->mt76->chandef;
+	int ret;
+
+	ret = cfg80211_chandef_dfs_required(hw->wiphy, chandef, NL80211_IFTYPE_AP);
+	if (ret <= 0)
+		goto out;
+
+	ieee80211_stop_queues(hw);
+	ret = mt7915_set_channel(phy);
+	if (ret)
+		goto out;
+	ieee80211_wake_queues(hw);
+
+out:
+	return ret;
+}
+
 int mt7915_mac_sta_add(struct mt76_dev *mdev, struct ieee80211_vif *vif,
 		       struct ieee80211_sta *sta)
 {
@@ -1707,6 +1728,7 @@ const struct ieee80211_ops mt7915_ops = {
 	.get_txpower = mt76_get_txpower,
 	.set_sar_specs = mt7915_set_sar_specs,
 	.channel_switch_beacon = mt7915_channel_switch_beacon,
+	.post_channel_switch = mt7915_post_channel_switch,
 	.get_stats = mt7915_get_stats,
 	.get_et_sset_count = mt7915_get_et_sset_count,
 	.get_et_stats = mt7915_get_et_stats,
