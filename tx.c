@@ -825,15 +825,29 @@ void __mt76_set_tx_blocked(struct mt76_dev *dev, bool blocked)
 }
 EXPORT_SYMBOL_GPL(__mt76_set_tx_blocked);
 
-int mt76_token_consume(struct mt76_dev *dev, struct mt76_txwi_cache **ptxwi)
+int mt76_token_consume(struct mt76_dev *dev, struct mt76_txwi_cache **ptxwi,
+		       u8 phy_idx)
 {
+	struct mt76_phy *phy = phy_idx < __MT_MAX_BAND ? dev->phys[phy_idx] : NULL;
 	int token;
 
 	spin_lock_bh(&dev->token_lock);
 
+	if (dev->num_phy > 1 && phy && phy->tokens > dev->token_threshold) {
+		spin_unlock_bh(&dev->token_lock);
+
+		return -EINVAL;
+	}
+
 	token = idr_alloc(&dev->token, *ptxwi, 0, dev->token_size, GFP_ATOMIC);
-	if (token >= 0)
+	if (token >= 0) {
 		dev->token_count++;
+
+		if (dev->num_phy > 1 && phy) {
+			(*ptxwi)->phy_idx = phy_idx;
+			phy->tokens++;
+		}
+	}
 
 #ifdef CONFIG_NET_MEDIATEK_SOC_WED
 	if (mtk_wed_device_active(&dev->mmio.wed) &&
@@ -878,6 +892,8 @@ mt76_token_release(struct mt76_dev *dev, int token, bool *wake)
 	txwi = idr_remove(&dev->token, token);
 	if (txwi) {
 		dev->token_count--;
+		if (dev->num_phy > 1 && dev->phys[txwi->phy_idx])
+			dev->phys[txwi->phy_idx]->tokens--;
 
 #ifdef CONFIG_NET_MEDIATEK_SOC_WED
 		if (mtk_wed_device_active(&dev->mmio.wed) &&

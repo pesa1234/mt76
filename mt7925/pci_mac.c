@@ -27,7 +27,7 @@ int mt7925e_tx_prepare_skb(struct mt76_dev *mdev, void *txwi_ptr,
 	t = (struct mt76_txwi_cache *)(txwi + mdev->drv->txwi_size);
 	t->skb = tx_info->skb;
 
-	id = mt76_token_consume(mdev, &t);
+	id = mt76_token_consume(mdev, &t, 0);
 	if (id < 0)
 		return id;
 

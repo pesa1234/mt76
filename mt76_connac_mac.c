@@ -1178,6 +1178,8 @@ void mt76_connac2_tx_token_put(struct mt76_dev *dev)
 	idr_for_each_entry(&dev->token, txwi, id) {
 		mt76_connac2_txwi_free(dev, txwi, NULL, NULL);
 		dev->token_count--;
+		if (dev->num_phy > 1 && dev->phys[txwi->phy_idx])
+			dev->phys[txwi->phy_idx]->tokens--;
 	}
 	spin_unlock_bh(&dev->token_lock);
 	idr_destroy(&dev->token);

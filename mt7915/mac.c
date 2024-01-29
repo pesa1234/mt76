@@ -758,6 +758,7 @@ int mt7915_tx_prepare_skb(struct mt76_dev *mdev, void *txwi_ptr,
 	struct mt76_connac_fw_txp *txp;
 	struct mt76_txwi_cache *t;
 	int id, i, nbuf = tx_info->nbuf - 1;
+	u8 phy_idx = (info->hw_queue & MT_TX_HW_QUEUE_PHY) >> 2;
 	u8 *txwi = (u8 *)txwi_ptr;
 	int pid;
 
@@ -781,7 +782,7 @@ int mt7915_tx_prepare_skb(struct mt76_dev *mdev, void *txwi_ptr,
 	t = (struct mt76_txwi_cache *)(txwi + mdev->drv->txwi_size);
 	t->skb = tx_info->skb;
 
-	id = mt76_token_consume(mdev, &t);
+	id = mt76_token_consume(mdev, &t, phy_idx);
 	if (id < 0)
 		return id;
 

@@ -638,6 +638,8 @@ static int mt7996_register_phy(struct mt7996_dev *dev, struct mt7996_phy *phy,
 		mtk_wed_device_start(&dev->mt76.mmio.wed_hif2, irq_mask);
 	}
 
+	dev->mt76.num_phy++;
+
 	return 0;
 
 error:
@@ -1334,6 +1336,8 @@ int mt7996_register_device(struct mt7996_dev *dev)
 	if (ret)
 		return ret;
 
+	dev->mt76.num_phy = 1;
+
 	ret = mt7996_register_phy(dev, mt7996_phy2(dev), MT_BAND1);
 	if (ret)
 		return ret;
@@ -1346,6 +1350,7 @@ int mt7996_register_device(struct mt7996_dev *dev)
 
 	dev->recovery.hw_init_done = true;
 
+	dev->mt76.token_threshold = dev->mt76.token_size / dev->mt76.num_phy;
 	ret = mt7996_init_debugfs(&dev->phy);
 	if (ret)
 		goto error;
