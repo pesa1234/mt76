@@ -55,6 +55,7 @@ enum mt7915_eeprom_field {
 #define MT_EE_CAL_DPD_SIZE_V2_7981		(102 * MT_EE_CAL_UNIT)	/* no 6g dpd data */
 
 #define MT_EE_WIFI_CONF0_TX_PATH		GENMASK(2, 0)
+#define MT_EE_WIFI_CONF0_RX_PATH		GENMASK(5, 3)
 #define MT_EE_WIFI_CONF0_BAND_SEL		GENMASK(7, 6)
 #define MT_EE_WIFI_CONF1_BAND_SEL		GENMASK(7, 6)
 #define MT_EE_WIFI_CONF_STREAM_NUM		GENMASK(7, 5)
@@ -195,6 +196,35 @@ mt7915_get_cal_dpd_size(struct mt7915_dev *dev)
 		return MT_EE_CAL_DPD_SIZE_V2_7981;
 	else
 		return MT_EE_CAL_DPD_SIZE_V2;
+}
+
+static inline bool
+mt7915_get_background_radar_cap(struct mt7915_dev *dev)
+{
+	u8 buf[MT7915_EEPROM_BLOCK_SIZE];
+	int val, band_sel, tx_path, rx_path, offs = MT_EE_WIFI_CONF + 1;
+
+	switch (mt76_chip(&dev->mt76)) {
+	case 0x7915:
+		return 1;
+	case 0x7906:
+		if (!mt7915_mcu_get_eeprom(dev, offs, buf)) {
+			val = buf[offs % MT7915_EEPROM_BLOCK_SIZE];
+			band_sel = FIELD_GET(MT_EE_WIFI_CONF0_BAND_SEL, val);
+			rx_path = FIELD_GET(MT_EE_WIFI_CONF0_RX_PATH, val);
+			tx_path = FIELD_GET(MT_EE_WIFI_CONF0_TX_PATH, val);
+
+			return (band_sel == MT_EE_V2_BAND_SEL_5GHZ &&
+				tx_path == rx_path && rx_path == 2);
+		}
+		break;
+	case 0x7981:
+	case 0x7986:
+	default:
+		break;
+	}
+
+	return 0;
 }
 
 extern const u8 mt7915_sku_group_len[MAX_SKU_RATE_GROUP_NUM];
