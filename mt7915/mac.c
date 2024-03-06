@@ -1165,52 +1165,13 @@ void mt7915_mac_reset_counters(struct mt7915_phy *phy)
 
 void mt7915_mac_set_timing(struct mt7915_phy *phy)
 {
-	s16 coverage_class = phy->coverage_class;
 	struct mt7915_dev *dev = phy->dev;
-	struct mt7915_phy *ext_phy = mt7915_ext_phy(dev);
-	u32 val, reg_offset;
-	u32 cck = FIELD_PREP(MT_TIMEOUT_VAL_PLCP, 231) |
-		  FIELD_PREP(MT_TIMEOUT_VAL_CCA, 48);
-	u32 ofdm = FIELD_PREP(MT_TIMEOUT_VAL_PLCP, 60) |
-		   FIELD_PREP(MT_TIMEOUT_VAL_CCA, 28);
+	u32 val;
 	u8 band = phy->mt76->band_idx;
-	int eifs_ofdm = 360, sifs = 10, offset;
 	bool a_band = !(phy->mt76->chandef.chan->band == NL80211_BAND_2GHZ);
 
 	if (!test_bit(MT76_STATE_RUNNING, &phy->mt76->state))
 		return;
-
-	if (ext_phy)
-		coverage_class = max_t(s16, dev->phy.coverage_class,
-				       ext_phy->coverage_class);
-
-	mt76_set(dev, MT_ARB_SCR(band),
-		 MT_ARB_SCR_TX_DISABLE | MT_ARB_SCR_RX_DISABLE);
-	udelay(1);
-
-	offset = 3 * coverage_class;
-	reg_offset = FIELD_PREP(MT_TIMEOUT_VAL_PLCP, offset) |
-		     FIELD_PREP(MT_TIMEOUT_VAL_CCA, offset);
-
-	if (!is_mt7915(&dev->mt76)) {
-		if (!a_band) {
-			mt76_wr(dev, MT_TMAC_ICR1(band),
-				FIELD_PREP(MT_IFS_EIFS_CCK, 314));
-			eifs_ofdm = 78;
-		} else {
-			eifs_ofdm = 84;
-		}
-	} else if (a_band) {
-		sifs = 16;
-	}
-
-	mt76_wr(dev, MT_TMAC_CDTR(band), cck + reg_offset);
-	mt76_wr(dev, MT_TMAC_ODTR(band), ofdm + reg_offset);
-	mt76_wr(dev, MT_TMAC_ICR0(band),
-		FIELD_PREP(MT_IFS_EIFS_OFDM, eifs_ofdm) |
-		FIELD_PREP(MT_IFS_RIFS, 2) |
-		FIELD_PREP(MT_IFS_SIFS, sifs) |
-		FIELD_PREP(MT_IFS_SLOT, phy->slottime));
 
 	if (phy->slottime < 20 || a_band)
 		val = MT7915_CFEND_RATE_DEFAULT;
@@ -1218,8 +1179,6 @@ void mt7915_mac_set_timing(struct mt7915_phy *phy)
 		val = MT7915_CFEND_RATE_11B;
 
 	mt76_rmw_field(dev, MT_AGG_ACR0(band), MT_AGG_ACR_CFEND_RATE, val);
-	mt76_clear(dev, MT_ARB_SCR(band),
-		   MT_ARB_SCR_TX_DISABLE | MT_ARB_SCR_RX_DISABLE);
 }
 
 void mt7915_mac_enable_nf(struct mt7915_dev *dev, bool band)

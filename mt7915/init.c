@@ -496,30 +496,6 @@ mt7915_mac_init_band(struct mt7915_dev *dev, u8 band)
 {
 	u32 mask, set;
 
-	mt76_rmw_field(dev, MT_TMAC_CTCR0(band),
-		       MT_TMAC_CTCR0_INS_DDLMT_REFTIME, 0x3f);
-	mt76_set(dev, MT_TMAC_CTCR0(band),
-		 MT_TMAC_CTCR0_INS_DDLMT_VHT_SMPDU_EN |
-		 MT_TMAC_CTCR0_INS_DDLMT_EN);
-
-	mask = MT_MDP_RCFR0_MCU_RX_MGMT |
-	       MT_MDP_RCFR0_MCU_RX_CTL_NON_BAR |
-	       MT_MDP_RCFR0_MCU_RX_CTL_BAR;
-	set = FIELD_PREP(MT_MDP_RCFR0_MCU_RX_MGMT, MT_MDP_TO_HIF) |
-	      FIELD_PREP(MT_MDP_RCFR0_MCU_RX_CTL_NON_BAR, MT_MDP_TO_HIF) |
-	      FIELD_PREP(MT_MDP_RCFR0_MCU_RX_CTL_BAR, MT_MDP_TO_HIF);
-	mt76_rmw(dev, MT_MDP_BNRCFR0(band), mask, set);
-
-	mask = MT_MDP_RCFR1_MCU_RX_BYPASS |
-	       MT_MDP_RCFR1_RX_DROPPED_UCAST |
-	       MT_MDP_RCFR1_RX_DROPPED_MCAST;
-	set = FIELD_PREP(MT_MDP_RCFR1_MCU_RX_BYPASS, MT_MDP_TO_HIF) |
-	      FIELD_PREP(MT_MDP_RCFR1_RX_DROPPED_UCAST, MT_MDP_TO_HIF) |
-	      FIELD_PREP(MT_MDP_RCFR1_RX_DROPPED_MCAST, MT_MDP_TO_HIF);
-	mt76_rmw(dev, MT_MDP_BNRCFR1(band), mask, set);
-
-	mt76_rmw_field(dev, MT_DMA_DCR0(band), MT_DMA_DCR0_MAX_RX_LEN, 0x680);
-
 	/* mt7915: disable rx rate report by default due to hw issues */
 	mt76_clear(dev, MT_DMA_DCR0(band), MT_DMA_DCR0_RXD_G5_EN);
 
@@ -622,22 +598,11 @@ mt7915_init_led_mux(struct mt7915_dev *dev)
 void mt7915_mac_init(struct mt7915_dev *dev)
 {
 	int i;
-	u32 rx_len = is_mt7915(&dev->mt76) ? 0x400 : 0x680;
-
-	/* config pse qid6 wfdma port selection */
-	if (!is_mt7915(&dev->mt76) && dev->hif2)
-		mt76_rmw(dev, MT_WF_PP_TOP_RXQ_WFDMA_CF_5, 0,
-			 MT_WF_PP_TOP_RXQ_QID6_WFDMA_HIF_SEL_MASK);
-
-	mt76_rmw_field(dev, MT_MDP_DCR1, MT_MDP_DCR1_MAX_RX_LEN, rx_len);
 
 	if (!is_mt7915(&dev->mt76))
 		mt76_clear(dev, MT_MDP_DCR2, MT_MDP_DCR2_RX_TRANS_SHORT);
 	else
 		mt76_clear(dev, MT_PLE_HOST_RPT0, MT_PLE_HOST_RPT0_TX_LATENCY);
-
-	/* enable hardware de-agg */
-	mt76_set(dev, MT_MDP_DCR0, MT_MDP_DCR0_DAMSDU_EN);
 
 	for (i = 0; i < mt7915_wtbl_size(dev); i++)
 		mt7915_mac_wtbl_update(dev, i,
