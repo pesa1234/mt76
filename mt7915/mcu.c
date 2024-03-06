@@ -284,6 +284,9 @@ mt7915_mcu_rx_radar_detected(struct mt7915_dev *dev, struct sk_buff *skb)
 	if (r->band_idx > MT_RX_SEL2)
 		return;
 
+	if (r->band_idx == MT_RX_SEL2 && !dev->rdd2_phy)
+		return;
+
 	if ((r->band_idx && !dev->phy.mt76->band_idx) &&
 	    dev->mt76.phys[MT_BAND1])
 		mphy = dev->mt76.phys[MT_BAND1];

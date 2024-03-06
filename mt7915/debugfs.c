@@ -216,6 +216,11 @@ mt7915_radar_trigger(void *data, u64 val)
 	if (val > MT_RX_SEL2)
 		return -EINVAL;
 
+	if (val == MT_RX_SEL2 && !dev->rdd2_phy) {
+		dev_err(dev->mt76.dev, "Background radar is not enabled\n");
+		return -EINVAL;
+	}
+
 	return mt76_connac_mcu_rdd_cmd(&dev->mt76, RDD_RADAR_EMULATE,
 				       val, 0, 0);
 }
