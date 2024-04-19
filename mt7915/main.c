@@ -489,7 +489,8 @@ static int mt7915_config(struct ieee80211_hw *hw, u32 changed)
 			rxfilter |= MT_WF_RFCR_DROP_OTHER_UC;
 			dev->monitor_mask &= ~BIT(band);
 		} else {
-			rxfilter &= ~MT_WF_RFCR_DROP_OTHER_UC;
+			rxfilter &= ~(MT_WF_RFCR_DROP_A2_BSSID |
+				      MT_WF_RFCR_DROP_OTHER_UC);
 			dev->monitor_mask |= BIT(band);
 		}
 
@@ -552,13 +553,14 @@ static void mt7915_configure_filter(struct ieee80211_hw *hw,
 			   MT_WF_RFCR_DROP_MCAST |
 			   MT_WF_RFCR_DROP_BCAST |
 			   MT_WF_RFCR_DROP_DUPLICATE |
-			   MT_WF_RFCR_DROP_A2_BSSID |
 			   MT_WF_RFCR_DROP_UNWANTED_CTL |
 			   MT_WF_RFCR_DROP_STBC_MULTI);
+	phy->rxfilter |= MT_WF_RFCR_DROP_VERSION;
 
 	MT76_FILTER(OTHER_BSS, MT_WF_RFCR_DROP_OTHER_TIM |
 			       MT_WF_RFCR_DROP_A3_MAC |
-			       MT_WF_RFCR_DROP_A3_BSSID);
+			       MT_WF_RFCR_DROP_A3_BSSID |
+			       MT_WF_RFCR_DROP_A2_BSSID);
 
 	MT76_FILTER(FCSFAIL, MT_WF_RFCR_DROP_FCSFAIL);
 
@@ -569,7 +571,8 @@ static void mt7915_configure_filter(struct ieee80211_hw *hw,
 	*total_flags = flags;
 	rxfilter = phy->rxfilter;
 	if (hw->conf.flags & IEEE80211_CONF_MONITOR)
-		rxfilter &= ~MT_WF_RFCR_DROP_OTHER_UC;
+		rxfilter &= ~(MT_WF_RFCR_DROP_A2_BSSID |
+			      MT_WF_RFCR_DROP_OTHER_UC);
 	else
 		rxfilter |= MT_WF_RFCR_DROP_OTHER_UC;
 	mt76_wr(dev, MT_WF_RFCR(band), rxfilter);
