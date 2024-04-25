@@ -1669,6 +1669,11 @@ mt7915_net_fill_forward_path(struct ieee80211_hw *hw,
 
 	ctx->dev = NULL;
 
+	if (!mvif->qos_map_enabled) {
+		mt7915_mcu_set_qos_map(dev, vif);
+		mvif->qos_map_enabled = true;
+	}
+
 	return 0;
 }
 #endif

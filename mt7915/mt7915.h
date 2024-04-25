@@ -174,6 +174,8 @@ struct mt7915_vif {
 
 	struct ieee80211_tx_queue_params queue_params[IEEE80211_NUM_ACS];
 	struct cfg80211_bitrate_mask bitrate_mask;
+
+	bool qos_map_enabled;
 };
 
 /* crash-dump */
@@ -515,6 +517,7 @@ int mt7915_mcu_fw_dbg_ctrl(struct mt7915_dev *dev, u32 module, u8 level);
 void mt7915_mcu_rx_event(struct mt7915_dev *dev, struct sk_buff *skb);
 void mt7915_mcu_exit(struct mt7915_dev *dev);
 void mt7915_mcu_wmm_pbc_work(struct work_struct *work);
+int mt7915_mcu_set_qos_map(struct mt7915_dev *dev, struct ieee80211_vif *vif);
 
 static inline u16 mt7915_wtbl_size(struct mt7915_dev *dev)
 {

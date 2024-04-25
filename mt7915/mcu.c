@@ -4052,3 +4052,40 @@ int mt7915_mcu_rf_regval(struct mt7915_dev *dev, u32 regidx, u32 *val, bool set)
 
 	return 0;
 }
+
+int mt7915_mcu_set_qos_map(struct mt7915_dev *dev, struct ieee80211_vif *vif)
+{
+#define IP_DSCP_NUM	64
+	struct mt7915_vif *mvif = (struct mt7915_vif *)vif->drv_priv;
+	struct {
+		u8 bss_idx;
+		u8 qos_map_enable;
+		u8 __rsv[2];
+		s8 qos_map[IP_DSCP_NUM];
+	} __packed req = {
+		.bss_idx = mvif->mt76.idx,
+		.qos_map_enable = false,
+	};
+	struct cfg80211_qos_map *qos_map;
+
+	rcu_read_lock();
+	qos_map = ieee80211_get_qos_map(vif);
+	if (qos_map) {
+		struct cfg80211_dscp_range *dscp_range = qos_map->up;
+		s8 up;
+
+		req.qos_map_enable = true;
+		for (up = 0; up < IEEE80211_NUM_UPS; ++up) {
+			u8 low = dscp_range[up].low, high = dscp_range[up].high;
+
+			if (low >= IP_DSCP_NUM || high >= IP_DSCP_NUM || low > high)
+				continue;
+
+			memset(req.qos_map + low, up, high - low + 1);
+		}
+	}
+	rcu_read_unlock();
+
+	return mt76_mcu_send_msg(&dev->mt76, MCU_WA_EXT_CMD(SET_QOS_MAP), &req,
+				 sizeof(req), false);
+}
