@@ -775,6 +775,7 @@ enum offs_rev {
 #define MT_TOP_RGU_SYSRAM_PDN		(MT_TOP_RGU_BASE + 0x050)
 #define MT_TOP_RGU_SYSRAM_SLP		(MT_TOP_RGU_BASE + 0x054)
 #define MT_TOP_WFSYS_PWR		(MT_TOP_RGU_BASE + 0x010)
+#define MT_TOP_BGFYS_PWR		(MT_TOP_RGU_BASE + 0x020)
 #define MT_TOP_PWR_EN_MASK		BIT(7)
 #define MT_TOP_PWR_ACK_MASK		BIT(6)
 #define MT_TOP_PWR_KEY_MASK		GENMASK(31, 16)
@@ -886,6 +887,7 @@ enum offs_rev {
 #define MT_ADIE_SLP_CTRL(_band, ofs)	(MT_ADIE_SLP_CTRL_BASE(_band) + (ofs))
 
 #define MT_ADIE_SLP_CTRL_CK0(_band)	MT_ADIE_SLP_CTRL(_band, 0x120)
+#define MT_ADIE_SLP_CTRL_CK1(_band)	MT_ADIE_SLP_CTRL(_band, 0x124)
 
 /* ADIE */
 #define MT_ADIE_CHIP_ID			0x02c

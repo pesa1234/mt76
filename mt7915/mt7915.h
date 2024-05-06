@@ -324,6 +324,7 @@ struct mt7915_dev {
 	
 	bool wmm_pbc_enable;
 	struct work_struct wmm_pbc_work;
+	u32 adie_type;
 };
 
 enum {

@@ -259,7 +259,8 @@ static int mt7986_wmac_consys_lockup(struct mt7915_dev *dev, bool enable)
 	mt76_wmac_rmw(dev->dcm, MT_INFRACFG_CONN2AP_SLPPROT,
 		      MT_INFRACFG_TX_EN_MASK,
 		      FIELD_PREP(MT_INFRACFG_TX_EN_MASK, enable));
-
+	
+	usleep_range(1000, 2000);
 	return 0;
 }
 
@@ -844,6 +845,10 @@ static void mt7986_wmac_subsys_setting(struct mt7915_dev *dev)
 		 MT_CONN_INFRA_OSC_STB_TIME_MASK, 0x80706);
 
 	/* prevent subsys from power on/of in a short time interval */
+	mt76_rmw(dev, MT_TOP_BGFYS_PWR,
+		 MT_TOP_PWR_ACK_MASK | MT_TOP_PWR_KEY_MASK,
+		 (0x42540000));
+
 	mt76_rmw(dev, MT_TOP_WFSYS_PWR,
 		 MT_TOP_PWR_ACK_MASK | MT_TOP_PWR_KEY_MASK,
 		 MT_TOP_PWR_KEY);
@@ -914,7 +919,7 @@ static void mt7986_wmac_clock_enable(struct mt7915_dev *dev, u32 adie_type)
 
 		read_poll_timeout(mt76_rr, cur, !(cur & MT_SLP_CTRL_BSY_MASK),
 				  USEC_PER_MSEC, 50 * USEC_PER_MSEC, false,
-				  dev, MT_ADIE_SLP_CTRL_CK0(0));
+				  dev, MT_ADIE_SLP_CTRL_CK0(1));
 	}
 	mt76_wmac_spi_unlock(dev);
 
@@ -1153,13 +1158,15 @@ int mt7986_wmac_enable(struct mt7915_dev *dev)
 	ret = mt7986_wmac_wfsys_powerup(dev);
 	if (ret)
 		return ret;
+		
+	dev->adie_type = adie_type;
 
 	return mt7986_wmac_sku_update(dev, adie_type);
 }
 
 void mt7986_wmac_disable(struct mt7915_dev *dev)
 {
-	u32 cur;
+	u32 cur, i;
 
 	mt7986_wmac_top_wfsys_wakeup(dev, true);
 
@@ -1177,6 +1184,20 @@ void mt7986_wmac_disable(struct mt7915_dev *dev)
 	/* Turn back wpll setting */
 	mt76_rmw_field(dev, MT_AFE_DIG_EN_02(0), MT_AFE_MCU_BPLL_CFG_MASK, 0x2);
 	mt76_rmw_field(dev, MT_AFE_DIG_EN_02(0), MT_AFE_WPLL_CFG_MASK, 0x2);
+	
+	/* Disable adie top clock */
+	mt76_wmac_spi_lock(dev);
+	for (i = 0; i < 2; i++) {
+		if (is_7975(dev, i, dev->adie_type) || is_7976(dev, i, dev->adie_type)) {
+			mt76_rmw_field(dev, MT_ADIE_SLP_CTRL_CK1(i),
+				       MT_SLP_CTRL_EN_MASK, 0x0);
+
+			read_poll_timeout(mt76_rr, cur, !(cur & MT_SLP_CTRL_BSY_MASK),
+					  USEC_PER_MSEC, 50 * USEC_PER_MSEC,
+					  false, dev, MT_ADIE_SLP_CTRL_CK1(i));
+		}
+	}
+	mt76_wmac_spi_unlock(dev);
 
 	/* Reset EMI */
 	mt76_rmw_field(dev, MT_CONN_INFRA_EMI_REQ,
@@ -1189,6 +1210,28 @@ void mt7986_wmac_disable(struct mt7915_dev *dev)
 		       MT_CONN_INFRA_INFRA_REQ_MASK, 0x0);
 
 	mt7986_wmac_top_wfsys_wakeup(dev, false);
+
+	mt76_rmw(dev, MT_TOP_CONN_INFRA_WAKEUP,
+		 MT_TOP_CONN_INFRA_WAKEUP_MASK, 0x1);
+
+	usleep_range(1000, 1100);
+
+	mt76_wmac_spi_lock(dev);
+	for (i = 0; i < 2; i++) {
+		if (is_7975(dev, i, dev->adie_type) || is_7976(dev, i, dev->adie_type)) {
+			mt76_rmw_field(dev, MT_ADIE_SLP_CTRL_CK0(i),
+				       MT_SLP_CTRL_EN_MASK, 0x0);
+
+			read_poll_timeout(mt76_rr, cur, !(cur & MT_SLP_CTRL_BSY_MASK),
+					  USEC_PER_MSEC, 50 * USEC_PER_MSEC,
+					  false, dev, MT_ADIE_SLP_CTRL_CK0(i));
+		}
+	}
+	mt76_wmac_spi_unlock(dev);
+
+	mt76_rmw(dev, MT_TOP_CONN_INFRA_WAKEUP,
+		 MT_TOP_CONN_INFRA_WAKEUP_MASK, 0x0);
+
 	mt7986_wmac_consys_lockup(dev, true);
 	mt7986_wmac_consys_reset(dev, false);
 }
