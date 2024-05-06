@@ -274,10 +274,25 @@ enum {
 	MCU_WA_PARAM_CMD_DEBUG,
 };
 
+#define BSS_ACQ_PKT_CNT_BSS_NUM		24
+#define BSS_ACQ_PKT_CNT_BSS_BITMAP_ALL	0x00ffffff
+#define BSS_ACQ_PKT_CNT_READ_CLR	BIT(31)
+#define WMM_PKT_THRESHOLD		50
+
+struct mt7915_mcu_bss_acq_pkt_cnt_event {
+	struct mt76_connac2_mcu_rxd rxd;
+
+	__le32 bss_bitmap;
+	struct {
+		__le32 cnt[IEEE80211_NUM_ACS];
+	} __packed bss[BSS_ACQ_PKT_CNT_BSS_NUM];
+} __packed;
+
 enum {
 	MCU_WA_PARAM_PDMA_RX = 0x04,
 	MCU_WA_PARAM_CPU_UTIL = 0x0b,
 	MCU_WA_PARAM_RED = 0x0e,
+	MCU_WA_PARAM_BSS_ACQ_PKT_CNT = 0x12,
 	MCU_WA_PARAM_RED_SETTING = 0x40,
 };
 

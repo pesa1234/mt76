@@ -2000,6 +2000,8 @@ void mt7915_mac_work(struct work_struct *work)
 
 	mt76_update_survey(mphy);
 	if (++mphy->mac_work_count == 5) {
+		int i;
+		
 		mphy->mac_work_count = 0;
 
 		mt7915_mac_update_stats(phy);
@@ -2007,6 +2009,18 @@ void mt7915_mac_work(struct work_struct *work)
 
 		if (phy->dev->muru_debug)
 			mt7915_mcu_muru_debug_get(phy);
+			
+		/* Update DEV-wise information only in
+		 * the MAC work of the first band running.
+		 */
+		for (i = MT_BAND0; i <= mphy->band_idx; ++i) {
+			if (i == mphy->band_idx) {
+				if (mt7915_mcu_wa_cmd(phy->dev, MCU_WA_PARAM_CMD(QUERY), MCU_WA_PARAM_BSS_ACQ_PKT_CNT,
+				                      BSS_ACQ_PKT_CNT_BSS_BITMAP_ALL | BSS_ACQ_PKT_CNT_READ_CLR, 0))
+					dev_err(mphy->dev->dev, "Failed to query per-AC-queue packet counts.\n");
+			} else if (test_bit(MT76_STATE_RUNNING, &mphy->dev->phys[i]->state))
+				break;
+		}
 	}
 
 	mutex_unlock(&mphy->dev->mutex);

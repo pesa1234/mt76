@@ -354,6 +354,93 @@ mt7915_mcu_rx_bcc_notify(struct mt7915_dev *dev, struct sk_buff *skb)
 			mt7915_mcu_cca_finish, mphy->hw);
 }
 
+void mt7915_mcu_wmm_pbc_work(struct work_struct *work)
+{
+#define WMM_PBC_QUEUE_NUM		5
+#define WMM_PBC_BSS_ALL			0xff
+#define WMM_PBC_WLAN_IDX_ALL		0xffff
+#define WMM_PBC_BOUND_DEFAULT		0xffff
+#define WMM_PBC_UP_BOUND_BAND0_VO	950
+#define WMM_PBC_UP_BOUND_BAND0_VI	950
+#define WMM_PBC_UP_BOUND_BAND0_BE	750
+#define WMM_PBC_UP_BOUND_BAND0_BK	450
+#define WMM_PBC_UP_BOUND_BAND1_VO	1900
+#define WMM_PBC_UP_BOUND_BAND1_VI	1900
+#define WMM_PBC_UP_BOUND_BAND1_BE	1500
+#define WMM_PBC_UP_BOUND_BAND1_BK	900
+#define WMM_PBC_UP_BOUND_MGMT		32
+	struct mt7915_dev *dev = container_of(work, struct mt7915_dev, wmm_pbc_work);
+	struct {
+		u8 bss_idx;
+		u8 queue_num;
+		__le16 wlan_idx;
+		u8 __rsv[4];
+		struct {
+			__le16 low;
+			__le16 up;
+		} __packed bound[WMM_PBC_QUEUE_NUM * 2];
+	} __packed req = {
+		.bss_idx = WMM_PBC_BSS_ALL,
+		.queue_num = WMM_PBC_QUEUE_NUM * 2,
+		.wlan_idx = cpu_to_le16(WMM_PBC_WLAN_IDX_ALL),
+	};
+	int i;
+
+#define pbc_acq_up_bound_config(_band, _ac, _bound)									\
+	req.bound[_band * WMM_PBC_QUEUE_NUM + mt76_connac_lmac_mapping(_ac)].up = dev->wmm_pbc_enable			\
+	                                                                        ? cpu_to_le16(_bound)			\
+	                                                                        : cpu_to_le16(WMM_PBC_BOUND_DEFAULT)
+	pbc_acq_up_bound_config(MT_BAND0, IEEE80211_AC_VO, WMM_PBC_UP_BOUND_BAND0_VO);
+	pbc_acq_up_bound_config(MT_BAND0, IEEE80211_AC_VI, WMM_PBC_UP_BOUND_BAND0_VI);
+	pbc_acq_up_bound_config(MT_BAND0, IEEE80211_AC_BE, WMM_PBC_UP_BOUND_BAND0_BE);
+	pbc_acq_up_bound_config(MT_BAND0, IEEE80211_AC_BK, WMM_PBC_UP_BOUND_BAND0_BK);
+	req.bound[MT_BAND0 * WMM_PBC_QUEUE_NUM + 4].up = dev->wmm_pbc_enable
+	                                               ? cpu_to_le16(WMM_PBC_UP_BOUND_MGMT)
+	                                               : cpu_to_le16(WMM_PBC_BOUND_DEFAULT);
+	pbc_acq_up_bound_config(MT_BAND1, IEEE80211_AC_VO, WMM_PBC_UP_BOUND_BAND1_VO);
+	pbc_acq_up_bound_config(MT_BAND1, IEEE80211_AC_VI, WMM_PBC_UP_BOUND_BAND1_VI);
+	pbc_acq_up_bound_config(MT_BAND1, IEEE80211_AC_BE, WMM_PBC_UP_BOUND_BAND1_BE);
+	pbc_acq_up_bound_config(MT_BAND1, IEEE80211_AC_BK, WMM_PBC_UP_BOUND_BAND1_BK);
+	req.bound[MT_BAND1 * WMM_PBC_QUEUE_NUM + 4].up = dev->wmm_pbc_enable
+	                                               ? cpu_to_le16(WMM_PBC_UP_BOUND_MGMT)
+	                                               : cpu_to_le16(WMM_PBC_BOUND_DEFAULT);
+
+	for (i = 0; i < WMM_PBC_QUEUE_NUM * 2; ++i)
+		req.bound[i].low = cpu_to_le16(WMM_PBC_BOUND_DEFAULT);
+
+	if (mt76_mcu_send_msg(&dev->mt76, MCU_WA_EXT_CMD(PKT_BUDGET_CTRL),
+	                      &req, sizeof(req), true))
+		dev_err(dev->mt76.dev, "Failed to configure WMM PBC.\n");
+}
+
+static void
+mt7915_mcu_rx_bss_acq_pkt_cnt(struct mt7915_dev *dev, struct sk_buff * skb)
+{
+	struct mt7915_mcu_bss_acq_pkt_cnt_event *event = (struct mt7915_mcu_bss_acq_pkt_cnt_event *)skb->data;
+	u32 bitmap = le32_to_cpu(event->bss_bitmap);
+	u64 sum[IEEE80211_NUM_ACS] = {0};
+	u8 ac_cnt = 0;
+	int i, j;
+
+	for (i = 0; (i < BSS_ACQ_PKT_CNT_BSS_NUM) && (bitmap & (1 << i)); ++i) {
+		for (j = IEEE80211_AC_VO; j < IEEE80211_NUM_ACS; ++j)
+			sum[j] += le32_to_cpu(event->bss[i].cnt[mt76_connac_lmac_mapping(j)]);
+	}
+
+	for (i = IEEE80211_AC_VO; i < IEEE80211_NUM_ACS; ++i) {
+		if (sum[i] > WMM_PKT_THRESHOLD)
+			++ac_cnt;
+	}
+
+	if (ac_cnt > 1 && !dev->wmm_pbc_enable) {
+		dev->wmm_pbc_enable = true;
+		queue_work(dev->mt76.wq, &dev->wmm_pbc_work);
+	} else if (ac_cnt <= 1 && dev->wmm_pbc_enable) {
+		dev->wmm_pbc_enable = false;
+		queue_work(dev->mt76.wq, &dev->wmm_pbc_work);
+	}
+}
+
 static void
 mt7915_mcu_rx_ext_event(struct mt7915_dev *dev, struct sk_buff *skb)
 {
@@ -375,6 +462,9 @@ mt7915_mcu_rx_ext_event(struct mt7915_dev *dev, struct sk_buff *skb)
 		break;
 	case MCU_EXT_EVENT_BCC_NOTIFY:
 		mt7915_mcu_rx_bcc_notify(dev, skb);
+		break;
+	case MCU_EXT_EVENT_BSS_ACQ_PKT_CNT:
+		mt7915_mcu_rx_bss_acq_pkt_cnt(dev, skb);
 		break;
 	default:
 		break;

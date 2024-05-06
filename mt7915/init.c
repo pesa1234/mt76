@@ -1228,6 +1228,8 @@ int mt7915_register_device(struct mt7915_dev *dev)
 	INIT_WORK(&dev->reset_work, mt7915_mac_reset_work);
 	INIT_WORK(&dev->dump_work, mt7915_mac_dump_work);
 	mutex_init(&dev->dump_mutex);
+	
+	INIT_WORK(&dev->wmm_pbc_work, mt7915_mcu_wmm_pbc_work);
 
 	dev->dbdc_support = mt7915_band_config(dev);
 
