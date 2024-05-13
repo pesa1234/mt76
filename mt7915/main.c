@@ -818,6 +818,10 @@ int mt7915_mac_sta_add(struct mt76_dev *mdev, struct ieee80211_vif *vif,
 
 	addr = mt7915_mac_wtbl_lmac_addr(dev, msta->wcid.idx, 30);
 	mt76_rmw_field(dev, addr, GENMASK(7, 0), 0xa0);
+	
+#ifdef CONFIG_MTK_VENDOR
+	mt7915_vendor_amnt_sta_remove(mvif->phy, sta);
+#endif
 
 	return mt7915_mcu_add_rate_ctrl(dev, vif, sta, false);
 }
