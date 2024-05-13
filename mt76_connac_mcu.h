@@ -1030,6 +1030,7 @@ enum {
 	MCU_EXT_EVENT_WA_TX_STAT = 0x74,
 	MCU_EXT_EVENT_BCC_NOTIFY = 0x75,
 	MCU_EXT_EVENT_MURU_CTRL = 0x9f,
+	MCU_EXT_EVENT_CSI_REPORT = 0xc2,
 };
 
 /* unified event table */
@@ -1239,6 +1240,7 @@ enum {
 	MCU_EXT_CMD_DPD_PRE_CAL_INFO = 0xac,
 	MCU_EXT_CMD_PHY_STAT_INFO = 0xad,
 	MCU_EXT_CMD_SET_QOS_MAP = 0xb4,
+	MCU_EXT_CMD_CSI_CTRL = 0xc2,
 };
 
 enum {

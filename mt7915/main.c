@@ -828,6 +828,10 @@ void mt7915_mac_sta_remove(struct mt76_dev *mdev, struct ieee80211_vif *vif,
 	struct mt7915_dev *dev = container_of(mdev, struct mt7915_dev, mt76);
 	struct mt7915_sta *msta = (struct mt7915_sta *)sta->drv_priv;
 	int i;
+	
+#ifdef CONFIG_MTK_VENDOR
+	mt7915_mcu_set_csi(&dev->phy, 2, 8, 1, 0, sta->addr, 0);
+#endif	
 
 	mt7915_mcu_add_sta(dev, vif, sta, false);
 

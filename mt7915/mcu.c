@@ -39,6 +39,10 @@ static bool sr_scene_detect = true;
 module_param(sr_scene_detect, bool, 0644);
 MODULE_PARM_DESC(sr_scene_detect, "Enable firmware scene detection algorithm");
 
+#ifdef CONFIG_MTK_VENDOR
+static int mt7915_mcu_report_csi(struct mt7915_dev *dev, struct sk_buff *skb);
+#endif
+
 static u8
 mt7915_mcu_get_sta_nss(u16 mcs_map)
 {
@@ -463,6 +467,11 @@ mt7915_mcu_rx_ext_event(struct mt7915_dev *dev, struct sk_buff *skb)
 	case MCU_EXT_EVENT_FW_LOG_2_HOST:
 		mt7915_mcu_rx_log_message(dev, skb);
 		break;
+#ifdef CONFIG_MTK_VENDOR
+	case MCU_EXT_EVENT_CSI_REPORT:
+		mt7915_mcu_report_csi(dev, skb);
+		break;
+#endif
 	case MCU_EXT_EVENT_BCC_NOTIFY:
 		mt7915_mcu_rx_bcc_notify(dev, skb);
 		break;
@@ -4136,6 +4145,200 @@ out:
 
 	return ret;
 }
+
+#ifdef CONFIG_MTK_VENDOR
+int mt7915_mcu_set_csi(struct mt7915_phy *phy, u8 mode,
+		       u8 cfg, u8 v1, u32 v2, u8 *mac_addr, u32 sta_interval)
+{
+	struct mt7915_dev *dev = phy->dev;
+	struct mt7915_mcu_csi req = {
+		.band = phy != &dev->phy,
+		.mode = mode,
+		.cfg = cfg,
+		.v1 = v1,
+		.v2 = cpu_to_le32(v2),
+	};
+
+	if (is_valid_ether_addr(mac_addr)) {
+		ether_addr_copy(req.mac_addr, mac_addr);
+
+		if (req.v2 == 1 && sta_interval)
+			req.sta_interval = sta_interval;
+	}
+
+	return mt76_mcu_send_msg(&dev->mt76, MCU_EXT_CMD(CSI_CTRL), &req,
+				 sizeof(req), true);
+}
+
+static int csi_integret_segment_data(struct mt7915_phy *phy, struct csi_data *csi)
+{
+	struct csi_data *csi_temp = NULL;
+
+	if (csi->segment_num == 0 &&
+	    csi->remain_last == 0)
+		return CSI_CHAIN_COMPLETE;
+	else if (csi->segment_num == 0 &&
+		 csi->remain_last == 1) {
+		memcpy(&phy->csi.buffered_csi,
+		       csi, sizeof(struct csi_data));
+
+		return CSI_CHAIN_SEGMENT_FIRST;
+	} else if (csi->segment_num != 0) {
+		csi_temp = &phy->csi.buffered_csi;
+		if (csi->chain_info !=
+			csi_temp->chain_info ||
+			csi->segment_num !=
+			(csi_temp->segment_num + 1))
+			return CSI_CHAIN_SEGMENT_ERR;
+
+		memcpy(&csi_temp->data_i[csi_temp->data_num],
+		       csi->data_i, csi->data_num * sizeof(s16));
+
+		memcpy(&csi_temp->data_q[csi_temp->data_num],
+		       csi->data_q, csi->data_num * sizeof(s16));
+
+		csi_temp->data_num += csi->data_num;
+		csi_temp->segment_num = csi->segment_num;
+		csi_temp->remain_last = csi->remain_last;
+
+		if (csi->remain_last == 0)
+			return CSI_CHAIN_SEGMENT_LAST;
+		else if (csi->remain_last == 1)
+			return CSI_CHAIN_SEGMENT_MIDDLE;
+	}
+
+	return CSI_CHAIN_ERR;
+}
+
+static int
+mt7915_mcu_report_csi(struct mt7915_dev *dev, struct sk_buff *skb)
+{
+	struct mt76_connac2_mcu_rxd *rxd = (struct mt76_connac2_mcu_rxd *)skb->data;
+	struct mt7915_phy *phy = &dev->phy;
+	int len, i;
+	struct mt7915_mcu_csi_report *cr;
+	int ret;
+	struct csi_data *current_csi = NULL;
+	struct csi_data *target_csi = NULL;
+
+	skb_pull(skb, sizeof(struct mt76_connac2_mcu_rxd));
+
+	len = le16_to_cpu(rxd->len) - sizeof(struct mt76_connac2_mcu_rxd) + 24;
+
+	cr = (struct mt7915_mcu_csi_report *)skb->data;
+
+	if (phy->csi.interval &&
+	    le32_to_cpu(cr->ts) < phy->csi.last_record + phy->csi.interval)
+		return 0;
+
+	current_csi = kzalloc(sizeof(*current_csi), GFP_KERNEL);
+
+	if (!current_csi)
+		return -ENOMEM;
+
+	memset(current_csi, 0, sizeof(struct csi_data));
+
+#define SET_CSI_DATA(_field)	(current_csi->_field = le32_to_cpu((cr->_field)))
+	SET_CSI_DATA(ch_bw);
+	SET_CSI_DATA(rssi);
+	SET_CSI_DATA(snr);
+	SET_CSI_DATA(data_num);
+	SET_CSI_DATA(data_bw);
+	SET_CSI_DATA(pri_ch_idx);
+	SET_CSI_DATA(ext_info);
+	SET_CSI_DATA(rx_mode);
+	SET_CSI_DATA(chain_info);
+	SET_CSI_DATA(ts);
+
+	if (is_mt798x(&dev->mt76) || is_mt7916(&dev->mt76)) {
+		SET_CSI_DATA(segment_num);
+		SET_CSI_DATA(remain_last);
+		SET_CSI_DATA(pkt_sn);
+		SET_CSI_DATA(tr_stream);
+	}
+
+	SET_CSI_DATA(band);
+	if (current_csi->band && !phy->mt76->band_idx)
+		phy = mt7915_ext_phy(dev);
+#undef SET_CSI_DATA
+
+	switch (current_csi->ch_bw) {
+	case CSI_BW20:
+		if (is_mt798x(&dev->mt76) || is_mt7916(&dev->mt76))
+			current_csi->data_num = CSI_BW20_DATA_COUNT;
+		break;
+	case CSI_BW40:
+		if (is_mt798x(&dev->mt76) || is_mt7916(&dev->mt76))
+			current_csi->data_num = CSI_BW40_DATA_COUNT;
+		break;
+	default:
+		break;
+	}
+
+	for (i = 0; i < current_csi->data_num; i++) {
+		current_csi->data_i[i] = le16_to_cpu(cr->data_i[i]);
+		current_csi->data_q[i] = le16_to_cpu(cr->data_q[i]);
+	}
+
+	memcpy(current_csi->ta, cr->ta, ETH_ALEN);
+	current_csi->tx_idx = le32_get_bits(cr->trx_idx, GENMASK(31, 16));
+	current_csi->rx_idx = le32_get_bits(cr->trx_idx, GENMASK(15, 0));
+
+	/* integret the bw80 segment */
+	if ((is_mt798x(&dev->mt76) || is_mt7916(&dev->mt76)) && current_csi->ch_bw >= CSI_BW80) {
+		ret = csi_integret_segment_data(phy, current_csi);
+
+		/* event data error or event drop */
+		if (ret == CSI_CHAIN_ERR || ret == CSI_CHAIN_SEGMENT_ERR) {
+			kfree(current_csi);
+			return -EINVAL;
+		}
+
+		if (ret == CSI_CHAIN_SEGMENT_FIRST || ret == CSI_CHAIN_SEGMENT_MIDDLE) {
+			kfree(current_csi);
+			return 0;
+		} else if (ret == CSI_CHAIN_COMPLETE) {
+			target_csi = current_csi;
+		} else if (ret == CSI_CHAIN_SEGMENT_LAST) {
+			target_csi = current_csi;
+			memcpy(target_csi, &phy->csi.buffered_csi, sizeof(struct csi_data));
+			memset(&phy->csi.buffered_csi, 0, sizeof(struct csi_data));
+		}
+	} else {
+		target_csi = current_csi;
+	}
+
+	/* put the csi data into list */
+	INIT_LIST_HEAD(&target_csi->node);
+	spin_lock_bh(&phy->csi.csi_lock);
+
+	if (!phy->csi.enable) {
+		kfree(target_csi);
+		spin_unlock_bh(&phy->csi.csi_lock);
+		return 0;
+	}
+
+	list_add_tail(&target_csi->node, &phy->csi.csi_list);
+	phy->csi.count++;
+
+	if (phy->csi.count > CSI_MAX_BUF_NUM) {
+		struct csi_data *old;
+
+		old = list_first_entry(&phy->csi.csi_list,
+				       struct csi_data, node);
+
+		list_del(&old->node);
+		kfree(old);
+		phy->csi.count--;
+	}
+
+	if (target_csi->chain_info & BIT(15)) /* last chain */
+		phy->csi.last_record = target_csi->ts;
+	spin_unlock_bh(&phy->csi.csi_lock);
+
+	return 0;
+}
+#endif
 
 int mt7915_mcu_rf_regval(struct mt7915_dev *dev, u32 regidx, u32 *val, bool set)
 {

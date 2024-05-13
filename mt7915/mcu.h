@@ -548,4 +548,77 @@ mt7915_get_power_bound(struct mt7915_phy *phy, s8 txpower)
 	return txpower;
 }
 
+#ifdef CONFIG_MTK_VENDOR
+struct mt7915_mcu_csi {
+	u8 band;
+	u8 mode;
+	u8 cfg;
+	u8 v1;
+	__le32 v2;
+	u8 mac_addr[ETH_ALEN];
+	u8 _rsv1[2];
+	u32 sta_interval;
+	u8 _rsv2[28];
+} __packed;
+
+struct csi_tlv {
+	__le32 tag;
+	__le32 len;
+} __packed;
+
+#define CSI_MAX_BUF_NUM	3000
+
+struct mt7915_mcu_csi_report {
+	struct csi_tlv _t0;
+	__le32 ver;
+	struct csi_tlv _t1;
+	__le32 ch_bw;
+	struct csi_tlv _t2;
+	__le32 rssi;
+	struct csi_tlv _t3;
+	__le32 snr;
+	struct csi_tlv _t4;
+	__le32 band;
+	struct csi_tlv _t5;
+	__le32 data_num;
+	struct csi_tlv _t6;
+	__le16 data_i[CSI_BW80_DATA_COUNT];
+	struct csi_tlv _t7;
+	__le16 data_q[CSI_BW80_DATA_COUNT];
+	struct csi_tlv _t8;
+	__le32 data_bw;
+	struct csi_tlv _t9;
+	__le32 pri_ch_idx;
+	struct csi_tlv _t10;
+	u8 ta[8];
+	struct csi_tlv _t11;
+	__le32 ext_info;
+	struct csi_tlv _t12;
+	__le32 rx_mode;
+	struct csi_tlv _t17;
+	__le32 chain_info;
+	struct csi_tlv _t18;
+	__le32 trx_idx;
+	struct csi_tlv _t19;
+	__le32 ts;
+	struct csi_tlv _t20;
+	__le32 pkt_sn;
+	struct csi_tlv _t21;
+	__le32 segment_num;
+	struct csi_tlv _t22;
+	__le32 remain_last;
+	struct csi_tlv _t23;
+	__le32 tr_stream;
+} __packed;
+
+enum CSI_CHAIN_TYPE {
+	CSI_CHAIN_ERR,
+	CSI_CHAIN_COMPLETE,
+	CSI_CHAIN_SEGMENT_FIRST,
+	CSI_CHAIN_SEGMENT_MIDDLE,
+	CSI_CHAIN_SEGMENT_LAST,
+	CSI_CHAIN_SEGMENT_ERR,
+};
+#endif
+
 #endif
