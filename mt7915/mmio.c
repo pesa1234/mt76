@@ -993,5 +993,4 @@ static void __exit mt7915_exit(void)
 
 module_init(mt7915_init);
 module_exit(mt7915_exit);
-MODULE_DESCRIPTION("MediaTek MT7915E MMIO helpers");
 MODULE_LICENSE("Dual BSD/GPL");
