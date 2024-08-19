@@ -293,7 +293,8 @@ static void mt7915_remove_interface(struct ieee80211_hw *hw,
 	int idx = msta->wcid.idx;
 
 	mt7915_mcu_add_bss_info(phy, vif, false);
-	mt7915_mcu_add_sta(dev, vif, NULL, CONN_STATE_DISCONNECT, true);
+	mt7915_mcu_add_sta(dev, vif, NULL, CONN_STATE_DISCONNECT, false);
+	mt76_wcid_mask_clear(dev->mt76.wcid_mask, mvif->sta.wcid.idx);
 
 	mutex_lock(&dev->mt76.mutex);
 	mt76_testmode_reset(phy->mt76, true);
@@ -780,6 +781,7 @@ int mt7915_mac_sta_event(struct mt76_dev *mdev, struct ieee80211_vif *vif,
 			return ret;
 
 		msta->wcid.sta = 1;
+		msta->wcid.sta_disabled = 0;
 		mt76_sta_set_txq_wcid(sta, msta->wcid.idx);
 
 		return 0;
@@ -790,6 +792,7 @@ int mt7915_mac_sta_event(struct mt76_dev *mdev, struct ieee80211_vif *vif,
 	case MT76_STA_EVENT_DISASSOC:
 		mt7915_mcu_add_sta(dev, vif, sta, CONN_STATE_DISCONNECT, false);
 		mt76_sta_set_txq_wcid(sta, mvif->sta.wcid.idx);
+		msta->wcid.sta_disabled = 1;
 		msta->wcid.sta = 0;
 		return 0;
 	}
