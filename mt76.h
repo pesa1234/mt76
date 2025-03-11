@@ -776,6 +776,7 @@ struct mt76_testmode_data {
 
 struct mt76_vif_link {
 	u8 idx;
+	u8 link_idx;
 	u8 omac_idx;
 	u8 band_idx;
 	u8 wmm_idx;
@@ -1489,6 +1490,8 @@ void mt76_sta_pre_rcu_remove(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			     struct ieee80211_sta *sta);
 
 int mt76_get_min_avg_rssi(struct mt76_dev *dev, u8 phy_idx);
+
+s8 mt76_get_power_bound(struct mt76_phy *phy, s8 txpower);
 
 int mt76_get_txpower(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		     int *dbm);

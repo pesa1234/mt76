@@ -811,6 +811,7 @@ int mt7921_mac_sta_add(struct mt76_dev *mdev, struct ieee80211_vif *vif,
 	msta->deflink.wcid.phy_idx = mvif->bss_conf.mt76.band_idx;
 	msta->deflink.wcid.tx_info |= MT_WCID_TX_INFO_SET;
 	msta->deflink.last_txs = jiffies;
+	msta->deflink.sta = msta;
 
 	ret = mt76_connac_pm_wake(&dev->mphy, &dev->pm);
 	if (ret)
@@ -1253,7 +1254,9 @@ static void mt7921_ipv6_addr_change(struct ieee80211_hw *hw,
 int mt7921_set_tx_sar_pwr(struct ieee80211_hw *hw,
 			  const struct cfg80211_sar_specs *sar)
 {
+	struct mt76_power_limits limits_array;
 	struct mt76_phy *mphy = hw->priv;
+	int tx_power;
 
 	if (sar) {
 		int err = mt76_init_sar_power(hw, sar);
@@ -1262,6 +1265,11 @@ int mt7921_set_tx_sar_pwr(struct ieee80211_hw *hw,
 			return err;
 	}
 	mt792x_init_acpi_sar_power(mt792x_hw_phy(hw), !sar);
+
+	tx_power = mt76_get_power_bound(mphy, hw->conf.power_level);
+	tx_power = mt76_get_rate_power_limits(mphy, mphy->chandef.chan,
+					      &limits_array, tx_power);
+	mphy->txpower_cur = tx_power;
 
 	return mt76_connac_mcu_set_rate_txpower(mphy);
 }
