@@ -69,7 +69,7 @@ struct mt7996_mcu_rdd_report {
 	__le16 tag;
 	__le16 len;
 
-	u8 band_idx;
+	u8 rdd_idx;
 	u8 long_detected;
 	u8 constant_prf_detected;
 	u8 staggered_prf_detected;
@@ -935,6 +935,12 @@ enum {
 	UNI_CMD_SER_ENABLE = 1,
 	UNI_CMD_SER_SET,
 	UNI_CMD_SER_TRIGGER
+};
+
+enum {
+	UNI_CMD_SDO_SET = 1,
+	UNI_CMD_SDO_QUERY,
+	UNI_CMD_SDO_CP_MODE = 6,
 };
 
 enum {
