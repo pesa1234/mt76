@@ -317,8 +317,8 @@ static void __mt7996_init_txpower(struct mt7996_phy *phy,
 				  struct ieee80211_supported_band *sband)
 {
 	struct mt7996_dev *dev = phy->dev;
-	int i, nss = hweight16(phy->mt76->chainmask);
-	int nss_delta = mt76_tx_power_nss_delta(nss);
+	int i, n_chains = hweight16(phy->mt76->chainmask);
+	int path_delta = mt76_tx_power_path_delta(n_chains);
 	int pwr_delta = mt7996_eeprom_get_power_delta(dev, sband->band);
 	struct mt76_power_limits limits;
 
@@ -330,7 +330,7 @@ static void __mt7996_init_txpower(struct mt7996_phy *phy,
 		target_power = mt76_get_rate_power_limits(phy->mt76, chan,
 							  &limits,
 							  target_power);
-		target_power += nss_delta;
+		target_power += path_delta;
 		target_power = DIV_ROUND_UP(target_power, 2);
 		chan->max_power = min_t(int, chan->max_reg_power,
 					target_power);
@@ -1117,18 +1117,17 @@ mt7996_set_stream_he_txbf_caps(struct mt7996_phy *phy,
 	elem->phy_cap_info[7] &= ~IEEE80211_HE_PHY_CAP7_MAX_NC_MASK;
 
 	c = IEEE80211_HE_PHY_CAP2_NDP_4x_LTF_AND_3_2US |
-	    IEEE80211_HE_PHY_CAP2_UL_MU_FULL_MU_MIMO |
-	    IEEE80211_HE_PHY_CAP2_UL_MU_PARTIAL_MU_MIMO;
+	    IEEE80211_HE_PHY_CAP2_UL_MU_FULL_MU_MIMO;
 	elem->phy_cap_info[2] |= c;
 
 	c = IEEE80211_HE_PHY_CAP4_SU_BEAMFORMEE;
 
-	if (is_mt7996(phy->mt76->dev))
-		c |= IEEE80211_HE_PHY_CAP4_BEAMFORMEE_MAX_STS_UNDER_80MHZ_4 |
-		     (IEEE80211_HE_PHY_CAP4_BEAMFORMEE_MAX_STS_ABOVE_80MHZ_4 * non_2g);
-	else
+	if (is_mt7992(phy->mt76->dev))
 		c |= IEEE80211_HE_PHY_CAP4_BEAMFORMEE_MAX_STS_UNDER_80MHZ_5 |
 		     (IEEE80211_HE_PHY_CAP4_BEAMFORMEE_MAX_STS_ABOVE_80MHZ_5 * non_2g);
+	else
+		c |= IEEE80211_HE_PHY_CAP4_BEAMFORMEE_MAX_STS_UNDER_80MHZ_4 |
+		     (IEEE80211_HE_PHY_CAP4_BEAMFORMEE_MAX_STS_ABOVE_80MHZ_4 * non_2g);
 
 	elem->phy_cap_info[4] |= c;
 
@@ -1327,6 +1326,9 @@ mt7996_init_eht_caps(struct mt7996_phy *phy, enum nl80211_band band,
 		IEEE80211_EHT_MAC_CAP0_OM_CONTROL |
 		u8_encode_bits(IEEE80211_EHT_MAC_CAP0_MAX_MPDU_LEN_11454,
 			       IEEE80211_EHT_MAC_CAP0_MAX_MPDU_LEN_MASK);
+
+	eht_cap_elem->mac_cap_info[1] |=
+		IEEE80211_EHT_MAC_CAP1_MAX_AMPDU_LEN_MASK;
 
 	eht_cap_elem->phy_cap_info[0] =
 		IEEE80211_EHT_PHY_CAP0_NDP_4_EHT_LFT_32_GI |
