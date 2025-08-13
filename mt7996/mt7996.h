@@ -248,11 +248,16 @@ struct mt7996_vif_link {
 
 	struct ieee80211_tx_queue_params queue_params[IEEE80211_NUM_ACS];
 	struct cfg80211_bitrate_mask bitrate_mask;
+
+	u8 mld_idx;
 };
 
 struct mt7996_vif {
 	struct mt7996_vif_link deflink; /* must be first */
 	struct mt76_vif_data mt76;
+
+	u8 mld_group_idx;
+	u8 mld_remap_idx;
 };
 
 /* crash-dump */
@@ -336,6 +341,9 @@ struct mt7996_dev {
 	u8 q_id[MT7996_MAX_QUEUE];
 	u32 q_int_mask[MT7996_MAX_QUEUE];
 	u32 q_wfdma_mask;
+
+	u64 mld_idx_mask;
+	u64 mld_remap_idx_mask;
 
 	const struct mt76_bus_ops *bus_ops;
 	struct mt7996_phy phy;
@@ -608,7 +616,8 @@ int mt7996_mcu_add_tx_ba(struct mt7996_dev *dev,
 			 struct mt7996_sta_link *msta_link, bool enable);
 int mt7996_mcu_add_rx_ba(struct mt7996_dev *dev,
 			 struct ieee80211_ampdu_params *params,
-			 struct mt7996_vif_link *link, bool enable);
+			 struct mt7996_vif_link *link,
+			 struct mt7996_sta_link *msta_link, bool enable);
 int mt7996_mcu_update_bss_color(struct mt7996_dev *dev,
 				struct mt76_vif_link *mlink,
 				struct cfg80211_he_bss_color *he_bss_color);
@@ -732,6 +741,7 @@ void mt7996_mac_write_txwi(struct mt7996_dev *dev, __le32 *txwi,
 			   struct sk_buff *skb, struct mt76_wcid *wcid,
 			   struct ieee80211_key_conf *key, int pid,
 			   enum mt76_txq_id qid, u32 changed);
+void mt7996_mac_update_beacons(struct mt7996_phy *phy);
 void mt7996_mac_set_coverage_class(struct mt7996_phy *phy);
 void mt7996_mac_work(struct work_struct *work);
 void mt7996_mac_reset_work(struct work_struct *work);
