@@ -1247,8 +1247,10 @@ mt7996_mac_tx_free(struct mt7996_dev *dev, void *data, int len)
 			idx = FIELD_GET(MT_TXFREE_INFO_WLAN_ID, info);
 			wcid = mt76_wcid_ptr(dev, idx);
 			sta = wcid_to_sta(wcid);
-			if (!sta)
+			if (!sta) {
+				link_sta = NULL;
 				goto next;
+			}
 
 			link_sta = rcu_dereference(sta->link[wcid->link_id]);
 			if (!link_sta)
@@ -1717,7 +1719,7 @@ mt7996_update_vif_beacon(void *priv, u8 *mac, struct ieee80211_vif *vif)
 		struct mt7996_vif_link *link;
 
 		link = mt7996_vif_link(dev, vif, link_id);
-		if (link->phy != phy)
+		if (!link || link->phy != phy)
 			continue;
 
 		mt7996_mcu_add_beacon(dev->mt76.hw, vif, link_conf);
