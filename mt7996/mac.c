@@ -62,7 +62,7 @@ static struct mt76_wcid *mt7996_rx_get_wcid(struct mt7996_dev *dev,
 	int i;
 
 	wcid = mt76_wcid_ptr(dev, idx);
-	if (!wcid)
+	if (!wcid || !wcid->sta)
 		return NULL;
 
 	if (!mt7996_band_valid(dev, band_idx))
@@ -1183,8 +1183,14 @@ mt7996_txwi_free(struct mt7996_dev *dev, struct mt76_txwi_cache *t,
 	txwi = (__le32 *)mt76_get_txwi_ptr(mdev, t);
 	if (link_sta) {
 		wcid_idx = wcid->idx;
-		if (likely(t->skb->protocol != cpu_to_be16(ETH_P_PAE)))
-			mt7996_tx_check_aggr(link_sta, wcid, t->skb);
+		if (likely(t->skb->protocol != cpu_to_be16(ETH_P_PAE))) {
+			struct mt7996_sta *msta;
+
+			/* AMPDU state is stored in the primary link */
+			msta = (void *)link_sta->sta->drv_priv;
+			mt7996_tx_check_aggr(link_sta, &msta->deflink.wcid,
+					     t->skb);
+		}
 	} else {
 		wcid_idx = le32_get_bits(txwi[9], MT_TXD9_WLAN_IDX);
 	}
