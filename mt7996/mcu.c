@@ -242,6 +242,30 @@ mt7996_mcu_parse_response(struct mt76_dev *mdev, int cmd,
 	return ret;
 }
 
+static void
+mt7996_mcu_set_timeout(struct mt76_dev *mdev, int cmd)
+{
+	mdev->mcu.timeout = 5 * HZ;
+
+	if (!(cmd & __MCU_CMD_FIELD_UNI))
+		return;
+
+	switch (FIELD_GET(__MCU_CMD_FIELD_ID, cmd)) {
+	case MCU_UNI_CMD_THERMAL:
+	case MCU_UNI_CMD_TWT:
+	case MCU_UNI_CMD_GET_MIB_INFO:
+	case MCU_UNI_CMD_STA_REC_UPDATE:
+	case MCU_UNI_CMD_BSS_INFO_UPDATE:
+		mdev->mcu.timeout = 2 * HZ;
+		return;
+	case MCU_UNI_CMD_EFUSE_CTRL:
+		mdev->mcu.timeout = 20 * HZ;
+		return;
+	default:
+		break;
+	}
+}
+
 static int
 mt7996_mcu_send_message(struct mt76_dev *mdev, struct sk_buff *skb,
 			int cmd, int *wait_seq)
@@ -255,7 +279,7 @@ mt7996_mcu_send_message(struct mt76_dev *mdev, struct sk_buff *skb,
 	u32 val;
 	u8 seq;
 
-	mdev->mcu.timeout = 20 * HZ;
+	mt7996_mcu_set_timeout(mdev, cmd);
 
 	seq = ++dev->mt76.mcu.msg_seq & 0xf;
 	if (!seq)
@@ -660,7 +684,7 @@ mt7996_mcu_wed_rro_event(struct mt7996_dev *dev, struct sk_buff *skb)
 {
 	struct mt7996_mcu_wed_rro_event *event = (void *)skb->data;
 
-	if (!dev->has_rro)
+	if (!mt7996_has_hwrro(dev))
 		return;
 
 	skb_pull(skb, sizeof(struct mt7996_mcu_rxd) + 4);
@@ -1183,7 +1207,7 @@ mt7996_mcu_sta_ba(struct mt7996_dev *dev, struct mt76_vif_link *mvif,
 	ba->ba_en = enable << params->tid;
 	ba->amsdu = params->amsdu;
 	ba->tid = params->tid;
-	ba->ba_rdd_rro = !tx && enable && dev->has_rro;
+	ba->ba_rdd_rro = !tx && enable && mt7996_has_hwrro(dev);
 
 	return mt76_mcu_skb_send_msg(&dev->mt76, skb,
 				     MCU_WMWA_UNI_CMD(STA_REC_UPDATE), true);
@@ -2325,13 +2349,10 @@ error_unlock:
 }
 
 static int
-mt7996_mcu_add_group(struct mt7996_dev *dev, struct ieee80211_vif *vif,
-		     struct ieee80211_sta *sta)
+mt7996_mcu_add_group(struct mt7996_dev *dev, struct mt7996_vif_link *link,
+		     struct mt76_wcid *wcid)
 {
 #define MT_STA_BSS_GROUP		1
-	struct mt7996_vif *mvif = (struct mt7996_vif *)vif->drv_priv;
-	struct mt7996_sta_link *msta_link;
-	struct mt7996_sta *msta;
 	struct {
 		u8 __rsv1[4];
 
@@ -2346,12 +2367,9 @@ mt7996_mcu_add_group(struct mt7996_dev *dev, struct ieee80211_vif *vif,
 		.tag = cpu_to_le16(UNI_VOW_DRR_CTRL),
 		.len = cpu_to_le16(sizeof(req) - 4),
 		.action = cpu_to_le32(MT_STA_BSS_GROUP),
-		.val = cpu_to_le32(mvif->deflink.mt76.idx % 16),
+		.val = cpu_to_le32(link->mt76.idx % 16),
+		.wlan_idx = cpu_to_le16(wcid->idx),
 	};
-
-	msta = sta ? (struct mt7996_sta *)sta->drv_priv : NULL;
-	msta_link = msta ? &msta->deflink : &mvif->deflink.msta_link;
-	req.wlan_idx = cpu_to_le16(msta_link->wcid.idx);
 
 	return mt76_mcu_send_msg(&dev->mt76, MCU_WM_UNI_CMD(VOW), &req,
 				 sizeof(req), true);
@@ -2492,7 +2510,7 @@ int mt7996_mcu_add_sta(struct mt7996_dev *dev,
 		}
 	}
 
-	ret = mt7996_mcu_add_group(dev, link_conf->vif, sta);
+	ret = mt7996_mcu_add_group(dev, link, wcid);
 	if (ret) {
 		dev_kfree_skb(skb);
 		return ret;
@@ -3395,6 +3413,8 @@ int mt7996_mcu_init_firmware(struct mt7996_dev *dev)
 		if (ret)
 			return ret;
 	}
+
+	mt76_connac_mcu_del_wtbl_all(&dev->mt76);
 
 	ret = mt7996_mcu_init_rx_airtime(dev);
 	if (ret)
