@@ -968,7 +968,7 @@ void mt7996_mac_write_txwi(struct mt7996_dev *dev, __le32 *txwi,
 		val |= MT_TXD5_TX_STATUS_HOST;
 	txwi[5] = cpu_to_le32(val);
 
-	val = MT_TXD6_DAS;
+	val = MT_TXD6_DAS | MT_TXD6_VTA;
 	if ((q_idx >= MT_LMAC_ALTX0 && q_idx <= MT_LMAC_BCN0) ||
 	    skb->protocol == cpu_to_be16(ETH_P_PAE))
 		val |= MT_TXD6_DIS_MAT;
@@ -2176,7 +2176,8 @@ mt7996_update_vif_beacon(void *priv, u8 *mac, struct ieee80211_vif *vif)
 		if (!link || link->phy != phy)
 			continue;
 
-		mt7996_mcu_add_beacon(dev->mt76.hw, vif, link_conf);
+		mt7996_mcu_add_beacon(dev->mt76.hw, vif, link_conf,
+				      link_conf->enable_beacon);
 	}
 }
 
@@ -2356,6 +2357,53 @@ out:
 }
 
 static void
+mt7996_mac_reset_sta_iter(void *data, struct ieee80211_sta *sta)
+{
+	struct mt7996_sta *msta = (struct mt7996_sta *)sta->drv_priv;
+	struct mt7996_dev *dev = data;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(msta->link); i++) {
+		struct mt7996_sta_link *msta_link = NULL;
+
+		msta_link = rcu_replace_pointer(msta->link[i], msta_link,
+						lockdep_is_held(&dev->mt76.mutex));
+		if (!msta_link)
+			continue;
+
+		mt7996_mac_sta_deinit_link(dev, msta_link);
+
+		if (msta->deflink_id == i) {
+			msta->deflink_id = IEEE80211_LINK_UNSPECIFIED;
+			continue;
+		}
+
+		kfree_rcu(msta_link, rcu_head);
+	}
+}
+
+static void
+mt7996_mac_reset_vif_iter(void *data, u8 *mac, struct ieee80211_vif *vif)
+{
+	struct mt76_vif_link *mlink = (struct mt76_vif_link *)vif->drv_priv;
+	struct mt76_vif_data *mvif = mlink->mvif;
+	struct mt7996_dev *dev = data;
+	int i;
+
+	rcu_read_lock();
+	for (i = 0; i < ARRAY_SIZE(mvif->link); i++) {
+
+		mlink = mt76_dereference(mvif->link[i], &dev->mt76);
+		if (!mlink || mlink == (struct mt76_vif_link *)vif->drv_priv)
+			continue;
+
+		rcu_assign_pointer(mvif->link[i], NULL);
+		kfree_rcu(mlink, rcu_head);
+	}
+	rcu_read_unlock();
+}
+
+static void
 mt7996_mac_full_reset(struct mt7996_dev *dev)
 {
 	struct ieee80211_hw *hw = mt76_hw(dev);
@@ -2384,6 +2432,10 @@ mt7996_mac_full_reset(struct mt7996_dev *dev)
 	mt7996_for_each_phy(dev, phy)
 		phy->omac_mask = 0;
 
+	ieee80211_iterate_stations_atomic(hw, mt7996_mac_reset_sta_iter, dev);
+	ieee80211_iterate_active_interfaces_atomic(hw,
+						   IEEE80211_IFACE_SKIP_SDATA_NOT_IN_DRIVER,
+						   mt7996_mac_reset_vif_iter, dev);
 	mt76_reset_device(&dev->mt76);
 
 	INIT_LIST_HEAD(&dev->sta_rc_list);
@@ -2462,10 +2514,12 @@ void mt7996_mac_reset_work(struct work_struct *work)
 
 	set_bit(MT76_RESET, &dev->mphy.state);
 	set_bit(MT76_MCU_RESET, &dev->mphy.state);
+	mt76_abort_scan(&dev->mt76);
 	wake_up(&dev->mt76.mcu.wait);
 
 	cancel_work_sync(&dev->wed_rro.work);
 	mt7996_for_each_phy(dev, phy) {
+		mt76_abort_roc(phy->mt76);
 		set_bit(MT76_RESET, &phy->mt76->state);
 		cancel_delayed_work_sync(&phy->mt76->mac_work);
 	}

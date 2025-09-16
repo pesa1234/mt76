@@ -682,7 +682,7 @@ int mt7996_mcu_update_bss_color(struct mt7996_dev *dev,
 				struct mt76_vif_link *mlink,
 				struct cfg80211_he_bss_color *he_bss_color);
 int mt7996_mcu_add_beacon(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-			  struct ieee80211_bss_conf *link_conf);
+			  struct ieee80211_bss_conf *link_conf, bool enabled);
 int mt7996_mcu_beacon_inband_discov(struct mt7996_dev *dev,
 				    struct ieee80211_bss_conf *link_conf,
 				    struct mt7996_vif_link *link, u32 changed);
@@ -817,6 +817,8 @@ void mt7996_mac_twt_teardown_flow(struct mt7996_dev *dev,
 				  struct mt7996_vif_link *link,
 				  struct mt7996_sta_link *msta_link,
 				  u8 flowid);
+void mt7996_mac_sta_deinit_link(struct mt7996_dev *dev,
+				struct mt7996_sta_link *msta_link);
 void mt7996_mac_add_twt_setup(struct ieee80211_hw *hw,
 			      struct ieee80211_sta *sta,
 			      struct ieee80211_twt_setup *twt);

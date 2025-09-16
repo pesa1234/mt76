@@ -816,6 +816,9 @@ static void mt76_reset_phy(struct mt76_phy *phy)
 		return;
 
 	INIT_LIST_HEAD(&phy->tx_list);
+	phy->num_sta = 0;
+	phy->chanctx = NULL;
+	mt76_roc_complete(phy);
 }
 
 void mt76_reset_device(struct mt76_dev *dev)
@@ -835,6 +838,8 @@ void mt76_reset_device(struct mt76_dev *dev)
 		rcu_assign_pointer(dev->wcid[i], NULL);
 	}
 	rcu_read_unlock();
+
+	mt76_abort_scan(dev);
 
 	INIT_LIST_HEAD(&dev->wcid_list);
 	INIT_LIST_HEAD(&dev->sta_poll_list);
@@ -1226,6 +1231,8 @@ mt76_rx_convert(struct mt76_dev *dev, struct sk_buff *skb,
 
 	mstat = *((struct mt76_rx_status *)skb->cb);
 	memset(status, 0, sizeof(*status));
+
+	skb->priority = mstat.qos_ctl & IEEE80211_QOS_CTL_TID_MASK;
 
 	status->flag = mstat.flag;
 	status->freq = mstat.freq;
