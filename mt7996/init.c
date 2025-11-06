@@ -476,7 +476,7 @@ mt7996_init_wiphy(struct ieee80211_hw *hw, struct mtk_wed_device *wed)
 		hw->max_tx_aggregation_subframes = 512;
 
 	hw->netdev_features = NETIF_F_RXCSUM;
-	if (mtk_wed_device_active(wed))
+	if (mtk_wed_device_active(wed) || mt76_npu_device_active(mdev))
 		hw->netdev_features |= NETIF_F_HW_TC;
 
 	hw->radiotap_timestamp.units_pos =
@@ -831,7 +831,8 @@ void mt7996_rro_hw_init(struct mt7996_dev *dev)
 				   MT_RRO_3_0_EMU_CONF_EN_MASK);
 			mt76_set(dev, MT_RRO_3_1_GLOBAL_CONFIG,
 				 MT_RRO_3_1_GLOBAL_CONFIG_RXDMAD_SEL);
-			if (!mtk_wed_device_active(&dev->mt76.mmio.wed)) {
+			if (!mtk_wed_device_active(&dev->mt76.mmio.wed) &&
+			    !mt76_npu_device_active(&dev->mt76)) {
 				mt76_set(dev, MT_RRO_3_1_GLOBAL_CONFIG,
 					 MT_RRO_3_1_GLOBAL_CONFIG_RX_DIDX_WR_EN |
 					 MT_RRO_3_1_GLOBAL_CONFIG_RX_CIDX_RD_EN);
@@ -960,9 +961,10 @@ static int mt7996_wed_rro_init(struct mt7996_dev *dev)
 		       MT7996_RRO_MSDU_PG_SIZE_PER_CR);
 	}
 
-	if (dev->mt76.hwrro_mode == MT76_HWRRO_V3_1) {
+	if (!mtk_wed_device_active(&dev->mt76.mmio.wed) &&
+	    dev->mt76.hwrro_mode == MT76_HWRRO_V3_1) {
 		ptr = dmam_alloc_coherent(dev->mt76.dma_dev,
-					  sizeof(dev->wed_rro.emi_rings_cpu.ptr),
+					  sizeof(*dev->wed_rro.emi_rings_cpu.ptr),
 					  &dev->wed_rro.emi_rings_cpu.phy_addr,
 					  GFP_KERNEL);
 		if (!ptr)
@@ -971,7 +973,7 @@ static int mt7996_wed_rro_init(struct mt7996_dev *dev)
 		dev->wed_rro.emi_rings_cpu.ptr = ptr;
 
 		ptr = dmam_alloc_coherent(dev->mt76.dma_dev,
-					  sizeof(dev->wed_rro.emi_rings_dma.ptr),
+					  sizeof(*dev->wed_rro.emi_rings_dma.ptr),
 					  &dev->wed_rro.emi_rings_dma.phy_addr,
 					  GFP_KERNEL);
 		if (!ptr)
@@ -1037,6 +1039,18 @@ static void mt7996_wed_rro_free(struct mt7996_dev *dev)
 				   dev->wed_rro.msdu_pg[i].phy_addr);
 	}
 
+	if (dev->wed_rro.emi_rings_cpu.ptr)
+		dmam_free_coherent(dev->mt76.dma_dev,
+				   sizeof(*dev->wed_rro.emi_rings_cpu.ptr),
+				   dev->wed_rro.emi_rings_cpu.ptr,
+				   dev->wed_rro.emi_rings_cpu.phy_addr);
+
+	if (dev->wed_rro.emi_rings_dma.ptr)
+		dmam_free_coherent(dev->mt76.dma_dev,
+				   sizeof(*dev->wed_rro.emi_rings_dma.ptr),
+				   dev->wed_rro.emi_rings_dma.ptr,
+				   dev->wed_rro.emi_rings_dma.phy_addr);
+
 	if (!dev->wed_rro.session.ptr)
 		return;
 
@@ -1068,6 +1082,9 @@ static void mt7996_wed_rro_work(struct work_struct *work)
 				     list);
 		list_del_init(&e->list);
 
+		if (mt76_npu_device_active(&dev->mt76))
+			goto reset_session;
+
 		for (i = 0; i < MT7996_RRO_WINDOW_MAX_LEN; i++) {
 			void *ptr = dev->wed_rro.session.ptr;
 			struct mt7996_wed_rro_addr *elem;
@@ -1088,6 +1105,7 @@ reset:
 			elem = ptr + elem_id * sizeof(*elem);
 			elem->data |= cpu_to_le32(val);
 		}
+reset_session:
 		mt7996_mcu_wed_rro_reset_sessions(dev, e->id);
 out:
 		kfree(e);
@@ -1672,6 +1690,10 @@ int mt7996_register_device(struct mt7996_dev *dev)
 		return ret;
 
 	ret = mt7996_register_phy(dev, MT_BAND2);
+	if (ret)
+		return ret;
+
+	ret = mt7996_npu_hw_init(dev);
 	if (ret)
 		return ret;
 
