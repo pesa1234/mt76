@@ -52,12 +52,10 @@ struct mt7996_mcu_thermal_enable {
 	u8 rsv[2];
 } __packed;
 
-struct mt7996_mcu_csa_notify {
-	struct mt7996_mcu_rxd rxd;
-
+struct mt7996_mcu_countdown_notify {
 	u8 omac_idx;
-	u8 csa_count;
-	u8 band_idx;
+	u8 count;
+	u8 csa_failure_reason; /* 0: success, 1: beacon disabled */
 	u8 rsv;
 } __packed;
 
@@ -414,7 +412,16 @@ struct bss_bcn_cntdwn_tlv {
 	__le16 tag;
 	__le16 len;
 	u8 cnt;
-	u8 rsv[3];
+	union {
+		struct {
+			bool static_pp;
+			bool abort;
+		} csa;
+		struct {
+			bool abort;
+		} cca;
+	};
+	u8 rsv;
 } __packed;
 
 struct bss_bcn_mbss_tlv {
@@ -472,6 +479,12 @@ struct bss_mld_tlv {
 	u8 remap_idx;
 	u8 link_id;
 	u8 __rsv[2];
+} __packed;
+
+struct bss_prot_tlv {
+	__le16 tag;
+	__le16 len;
+	__le32 prot_mode;
 } __packed;
 
 struct sta_rec_ht_uni {
@@ -791,6 +804,11 @@ enum {
 	UNI_CHANNEL_RX_PATH,
 };
 
+enum {
+	UNI_CHIP_CONFIG_NIC_CAPA = 3,
+	UNI_CHIP_CONFIG_DUP_WTBL = 4,
+};
+
 #define MT7996_BSS_UPDATE_MAX_SIZE	(sizeof(struct bss_req_hdr) +		\
 					 sizeof(struct mt76_connac_bss_basic_tlv) +	\
 					 sizeof(struct bss_rlm_tlv) +		\
@@ -837,6 +855,7 @@ enum {
 enum {
 	UNI_BAND_CONFIG_RADIO_ENABLE,
 	UNI_BAND_CONFIG_RTS_THRESHOLD = 0x08,
+	UNI_BAND_CONFIG_MAC_ENABLE_CTRL = 0x0c,
 };
 
 enum {

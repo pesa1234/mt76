@@ -613,13 +613,18 @@ EXPORT_SYMBOL_GPL(mt76_unregister_phy);
 
 int mt76_create_page_pool(struct mt76_dev *dev, struct mt76_queue *q)
 {
+	bool is_qrx = mt76_queue_is_rx(dev, q);
 	struct page_pool_params pp_params = {
 		.order = 0,
 		.flags = 0,
 		.nid = NUMA_NO_NODE,
 		.dev = dev->dma_dev,
 	};
-	int idx = q - dev->q_rx;
+	int idx = is_qrx ? q - dev->q_rx : -1;
+
+	/* Allocate page_pools just for rx/wed_tx_free queues */
+	if (!is_qrx && !mt76_queue_is_wed_tx_free(q))
+		return 0;
 
 	switch (idx) {
 	case MT_RXQ_MAIN:
@@ -640,6 +645,9 @@ int mt76_create_page_pool(struct mt76_dev *dev, struct mt76_queue *q)
 		pp_params.dma_dir = DMA_FROM_DEVICE;
 		pp_params.max_len = PAGE_SIZE;
 		pp_params.offset = 0;
+		/* NAPI is available just for rx queues */
+		if (idx >= 0 && idx < ARRAY_SIZE(dev->napi))
+			pp_params.napi = &dev->napi[idx];
 	}
 
 	q->page_pool = page_pool_create(&pp_params);
@@ -841,8 +849,6 @@ void mt76_reset_device(struct mt76_dev *dev)
 		rcu_assign_pointer(dev->wcid[i], NULL);
 	}
 	rcu_read_unlock();
-
-	mt76_abort_scan(dev);
 
 	INIT_LIST_HEAD(&dev->wcid_list);
 	INIT_LIST_HEAD(&dev->sta_poll_list);
@@ -1710,6 +1716,16 @@ void mt76_wcid_cleanup(struct mt76_dev *dev, struct mt76_wcid *wcid)
 
 	idr_destroy(&wcid->pktid);
 
+	/* Remove from sta_poll_list to prevent list corruption after reset.
+	 * Without this, mt76_reset_device() reinitializes sta_poll_list but
+	 * leaves wcid->poll_list with stale pointers, causing list corruption
+	 * when mt76_wcid_add_poll() checks list_empty().
+	 */
+	spin_lock_bh(&dev->sta_poll_lock);
+	if (!list_empty(&wcid->poll_list))
+		list_del_init(&wcid->poll_list);
+	spin_unlock_bh(&dev->sta_poll_lock);
+
 	spin_lock_bh(&phy->tx_lock);
 
 	if (!list_empty(&wcid->tx_list))
@@ -1936,7 +1952,8 @@ void mt76_sw_scan_complete(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 }
 EXPORT_SYMBOL_GPL(mt76_sw_scan_complete);
 
-int mt76_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant)
+int mt76_get_antenna(struct ieee80211_hw *hw, int radio_idx, u32 *tx_ant,
+		     u32 *rx_ant)
 {
 	struct mt76_phy *phy = hw->priv;
 	struct mt76_dev *dev = phy->dev;
