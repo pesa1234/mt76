@@ -64,6 +64,11 @@
 #define MT7992_FIRMWARE_DSP_23		"mediatek/mt7996/mt7992_dsp_23.bin"
 #define MT7992_ROM_PATCH_23		"mediatek/mt7996/mt7992_rom_patch_23.bin"
 
+#define MT7992_FIRMWARE_WA_24		"mediatek/mt7996/mt7992_wa_24.bin"
+#define MT7992_FIRMWARE_WM_24		"mediatek/mt7996/mt7992_wm_24.bin"
+#define MT7992_FIRMWARE_DSP_24		"mediatek/mt7996/mt7992_dsp_24.bin"
+#define MT7992_ROM_PATCH_24		"mediatek/mt7996/mt7992_rom_patch_24.bin"
+
 #define MT7990_FIRMWARE_WA		""
 #define MT7990_FIRMWARE_WM		"mediatek/mt7996/mt7990_wm.bin"
 #define MT7990_FIRMWARE_DSP		""
@@ -79,12 +84,14 @@
 #define MT7992_EEPROM_DEFAULT_MIX	"mediatek/mt7996/mt7992_eeprom_2i5e.bin"
 #define MT7992_EEPROM_DEFAULT_23	"mediatek/mt7996/mt7992_eeprom_23.bin"
 #define MT7992_EEPROM_DEFAULT_23_INT	"mediatek/mt7996/mt7992_eeprom_23_2i5i.bin"
+#define MT7992_EEPROM_DEFAULT_24	"mediatek/mt7996/mt7992_eeprom_24_2i5i.bin"
 
 #define MT7990_EEPROM_DEFAULT		"mediatek/mt7996/mt7990_eeprom.bin"
 #define MT7990_EEPROM_DEFAULT_INT	"mediatek/mt7996/mt7990_eeprom_2i5i.bin"
 
 #define MT7996_EEPROM_SIZE		7680
 #define MT7996_EEPROM_BLOCK_SIZE	16
+#define MT7996_EXT_EEPROM_BLOCK_SIZE	1024
 #define MT7996_TOKEN_SIZE		16384
 #define MT7996_HW_TOKEN_SIZE		8192
 
@@ -157,6 +164,7 @@ enum mt7996_var_type {
 enum mt7992_var_type {
 	MT7992_VAR_TYPE_44,
 	MT7992_VAR_TYPE_23,
+	MT7992_VAR_TYPE_24,
 };
 
 enum mt7990_var_type {
@@ -168,6 +176,18 @@ enum mt7996_fem_type {
 	MT7996_FEM_INT,
 	MT7996_FEM_MIX,
 };
+
+enum mt7996_eeprom_mode {
+	EEPROM_MODE_DEFAULT_BIN,
+	EEPROM_MODE_EFUSE,
+	EEPROM_MODE_FLASH,
+	EEPROM_MODE_EXT,
+};
+
+#define MT7996_EFUSE_BASE_OFFS_ADIE0	0x400
+#define MT7996_EFUSE_BASE_OFFS_ADIE1	0x1e00
+#define MT7996_EFUSE_BASE_OFFS_ADIE2	0x1200
+#define MT7992_EFUSE_BASE_OFFS_ADIE1	0x1200
 
 enum mt7996_txq_id {
 	MT7996_TXQ_FWDL = 16,
@@ -441,7 +461,7 @@ struct mt7996_dev {
 
 	u32 hw_pattern;
 
-	bool flash_mode:1;
+	u8 eeprom_mode;
 	bool has_eht:1;
 
 	struct {
@@ -624,6 +644,25 @@ mt7996_vif_conf_link(struct mt7996_dev *dev, struct ieee80211_vif *vif,
 							    link_conf);
 }
 
+static inline struct mt7996_sta_link *
+mt7996_sta_link(struct mt7996_sta *msta, u8 link_id)
+{
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return NULL;
+
+	return rcu_dereference(msta->link[link_id]);
+}
+
+static inline struct mt7996_sta_link *
+mt7996_sta_link_protected(struct mt7996_dev *dev, struct mt7996_sta *msta,
+			  u8 link_id)
+{
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return NULL;
+
+	return mt76_dereference(msta->link[link_id], &dev->mt76);
+}
+
 #define mt7996_for_each_phy(dev, phy)					\
 	for (int __i = 0; __i < ARRAY_SIZE((dev)->radio_phy); __i++)	\
 		if (((phy) = (dev)->radio_phy[__i]) != NULL)
@@ -717,8 +756,9 @@ int mt7996_mcu_set_fixed_rate_ctrl(struct mt7996_dev *dev,
 int mt7996_mcu_set_fixed_field(struct mt7996_dev *dev, struct mt7996_sta *msta,
 			       void *data, u8 link_id, u32 field);
 int mt7996_mcu_set_eeprom(struct mt7996_dev *dev);
-int mt7996_mcu_get_eeprom(struct mt7996_dev *dev, u32 offset, u8 *buf, u32 buf_len);
-int mt7996_mcu_get_eeprom_free_block(struct mt7996_dev *dev, u8 *block_num);
+int mt7996_mcu_get_eeprom(struct mt7996_dev *dev, u32 offset, u8 *buf, u32 buf_len,
+			  enum mt7996_eeprom_mode mode);
+int mt7996_mcu_get_efuse_free_block(struct mt7996_dev *dev, u8 *block_num);
 int mt7996_mcu_get_chip_config(struct mt7996_dev *dev, u32 *cap);
 int mt7996_mcu_set_ser(struct mt7996_dev *dev, u8 action, u8 set, u8 band);
 int mt7996_mcu_set_txbf(struct mt7996_dev *dev, u8 action);
@@ -816,6 +856,11 @@ static inline bool mt7996_has_wa(struct mt7996_dev *dev)
 	return !is_mt7990(&dev->mt76);
 }
 
+static inline bool mt7996_has_ext_eeprom(struct mt7996_dev *dev)
+{
+	return !is_mt7996(&dev->mt76);
+}
+
 void mt7996_mac_init(struct mt7996_dev *dev);
 u32 mt7996_mac_wtbl_lmac_addr(struct mt7996_dev *dev, u16 wcid, u8 dw);
 bool mt7996_mac_wtbl_update(struct mt7996_dev *dev, int idx, u32 mask);
@@ -875,6 +920,10 @@ int mt7996_mcu_wtbl_update_hdr_trans(struct mt7996_dev *dev,
 				     struct mt7996_vif_link *link,
 				     struct mt7996_sta_link *msta_link);
 int mt7996_mcu_cp_support(struct mt7996_dev *dev, u8 mode);
+int mt7996_mcu_set_emlsr_mode(struct mt7996_dev *dev,
+			      struct ieee80211_vif *vif,
+			      struct ieee80211_sta *sta,
+			      struct ieee80211_eml_params *eml_params);
 #ifdef CONFIG_MAC80211_DEBUGFS
 void mt7996_sta_add_debugfs(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			    struct ieee80211_sta *sta, struct dentry *dir);

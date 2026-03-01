@@ -340,7 +340,7 @@ static inline u8 mt76_backoff_n_chains(struct mt76_dev *dev, u8 idx)
 	static const u8 connac2_table[] = {
 		1, 2, 3, 4, 2, 3, 4, 3, 4, 4, 0, 0, 0, 0, 0};
 
-	if (idx < 0 || idx >= ARRAY_SIZE(connac3_table))
+	if (idx >= ARRAY_SIZE(connac3_table))
 		return 0;
 
 	return is_mt799x(dev) ? connac3_table[idx] : connac2_table[idx];
@@ -368,10 +368,10 @@ mt76_apply_array_limit(struct mt76_dev *dev, s8 *pwr, size_t pwr_len,
 			backoff_delta = 0;
 			backoff_n_chains = 0;
 			break;
-		case MT76_SKU_BACKOFF:
+		case MT76_SKU_BACKOFF_BF_OFFSET:
 			backoff_chain_idx += 1;
 			fallthrough;
-		case MT76_SKU_BACKOFF_BF_OFFSET:
+		case MT76_SKU_BACKOFF:
 			delta = mt76_tx_power_path_delta(n_chains);
 			backoff_n_chains = mt76_backoff_n_chains(dev, backoff_chain_idx);
 			backoff_delta = mt76_tx_power_path_delta(backoff_n_chains);
@@ -411,11 +411,18 @@ mt76_apply_multi_array_limit(struct mt76_dev *dev, s8 *pwr, size_t pwr_len,
 		if (len < pwr_len + 1)
 			break;
 
-		/* For connac2 devices,
-		 * - paths-ru = RU26, RU52, RU106, BW20, BW40, BW80, BW160
-		 * - paths-ru-bf = RU26, RU52, RU106, BW20, BW40, BW80, BW160
-		 * Only the first three entries use 1T1ss and do not need index
-		 * adjustment; the remaining four require index offset.
+		/* Each RU entry (RU26, RU52, RU106, BW20, ...) in the DTS
+		 * corresponds to 10 stream combinations (1T1ss, 2T1ss, 3T1ss,
+		 * 4T1ss, 2T2ss, 3T2ss, 4T2ss, 3T3ss, 4T3ss, 4T4ss).
+		 *
+		 * For beamforming tables:
+		 * - In connac2, beamforming entries for BW20~BW160 and OFDM
+		 *   do not include 1T1ss.
+		 * - In connac3, beamforming entries for BW20~BW160 and RU
+		 *   include 1T1ss, but OFDM beamforming does not include 1T1ss.
+		 *
+		 * Non-beamforming and RU entries for both connac2 and connac3
+		 * include 1T1ss.
 		 */
 		if (!is_mt799x(dev) && type == MT76_SKU_BACKOFF &&
 		    i > connac2_backoff_ru_idx)
@@ -494,42 +501,35 @@ s8 mt76_get_rate_power_limits(struct mt76_phy *phy,
 	mt76_apply_array_limit(dev, dest->ofdm, ARRAY_SIZE(dest->ofdm), val,
 			       target_power, txs_delta, &max_power, n_chains, MT76_SKU_RATE);
 
-	val = mt76_get_of_array_s8(np, "rates-mcs", &len,
-				   ARRAY_SIZE(dest->mcs[0]) + 1);
+	val = mt76_get_of_array_s8(np, "rates-mcs", &len, ARRAY_SIZE(dest->mcs[0]) + 1);
 	mt76_apply_multi_array_limit(dev, dest->mcs[0], ARRAY_SIZE(dest->mcs[0]),
 				     ARRAY_SIZE(dest->mcs), val, len, target_power,
 				     txs_delta, &max_power, n_chains, MT76_SKU_RATE);
 
-	val = mt76_get_of_array_s8(np, "rates-ru", &len,
-				   ARRAY_SIZE(dest->ru[0]) + 1);
+	val = mt76_get_of_array_s8(np, "rates-ru", &len, ARRAY_SIZE(dest->ru[0]) + 1);
 	mt76_apply_multi_array_limit(dev, dest->ru[0], ARRAY_SIZE(dest->ru[0]),
 				     ARRAY_SIZE(dest->ru), val, len, target_power,
 				     txs_delta, &max_power, n_chains, MT76_SKU_RATE);
 
-	val = mt76_get_of_array_s8(np, "paths-cck", &len,
-				   ARRAY_SIZE(dest->path.cck));
+	val = mt76_get_of_array_s8(np, "paths-cck", &len, ARRAY_SIZE(dest->path.cck));
 	mt76_apply_array_limit(dev, dest->path.cck, ARRAY_SIZE(dest->path.cck), val,
 			       target_power, txs_delta, &max_power, n_chains, MT76_SKU_BACKOFF);
 
-	val = mt76_get_of_array_s8(np, "paths-ofdm", &len,
-				   ARRAY_SIZE(dest->path.ofdm));
+	val = mt76_get_of_array_s8(np, "paths-ofdm", &len, ARRAY_SIZE(dest->path.ofdm));
 	mt76_apply_array_limit(dev, dest->path.ofdm, ARRAY_SIZE(dest->path.ofdm), val,
 			       target_power, txs_delta, &max_power, n_chains, MT76_SKU_BACKOFF);
 
-	val = mt76_get_of_array_s8(np, "paths-ofdm-bf", &len,
-				   ARRAY_SIZE(dest->path.ofdm_bf));
+	val = mt76_get_of_array_s8(np, "paths-ofdm-bf", &len, ARRAY_SIZE(dest->path.ofdm_bf));
 	mt76_apply_array_limit(dev, dest->path.ofdm_bf, ARRAY_SIZE(dest->path.ofdm_bf), val,
 			       target_power, txs_delta, &max_power, n_chains,
 			       MT76_SKU_BACKOFF_BF_OFFSET);
 
-	val = mt76_get_of_array_s8(np, "paths-ru", &len,
-				   ARRAY_SIZE(dest->path.ru[0]) + 1);
+	val = mt76_get_of_array_s8(np, "paths-ru", &len, ARRAY_SIZE(dest->path.ru[0]) + 1);
 	mt76_apply_multi_array_limit(dev, dest->path.ru[0], ARRAY_SIZE(dest->path.ru[0]),
 				     ARRAY_SIZE(dest->path.ru), val, len, target_power,
 				     txs_delta, &max_power, n_chains, MT76_SKU_BACKOFF);
 
-	val = mt76_get_of_array_s8(np, "paths-ru-bf", &len,
-				   ARRAY_SIZE(dest->path.ru_bf[0]) + 1);
+	val = mt76_get_of_array_s8(np, "paths-ru-bf", &len, ARRAY_SIZE(dest->path.ru_bf[0]) + 1);
 	mt76_apply_multi_array_limit(dev, dest->path.ru_bf[0], ARRAY_SIZE(dest->path.ru_bf[0]),
 				     ARRAY_SIZE(dest->path.ru_bf), val, len, target_power,
 				     txs_delta, &max_power, n_chains, MT76_SKU_BACKOFF);

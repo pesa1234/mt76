@@ -1174,7 +1174,7 @@ static int mt7996_variant_type_init(struct mt7996_dev *dev)
 		else if (u32_get_bits(val, MT_PAD_GPIO_ADIE_COMB_7992))
 			var_type = MT7992_VAR_TYPE_44;
 		else
-			return -EINVAL;
+			var_type = MT7992_VAR_TYPE_24;
 		break;
 	case MT7990_DEVICE_ID:
 		var_type = MT7990_VAR_TYPE_23;
@@ -1208,7 +1208,8 @@ static int mt7996_variant_fem_init(struct mt7996_dev *dev)
 	if (ret)
 		return ret;
 
-	ret = mt7996_mcu_get_eeprom(dev, MT7976C_EFUSE_OFFSET, buf, sizeof(buf));
+	ret = mt7996_mcu_get_eeprom(dev, MT7976C_EFUSE_OFFSET, buf, sizeof(buf),
+				    EEPROM_MODE_EFUSE);
 	if (ret && ret != -EINVAL)
 		return ret;
 
@@ -1773,6 +1774,7 @@ error:
 
 void mt7996_unregister_device(struct mt7996_dev *dev)
 {
+	cancel_work_sync(&dev->dump_work);
 	cancel_work_sync(&dev->wed_rro.work);
 	mt7996_unregister_phy(mt7996_phy3(dev));
 	mt7996_unregister_phy(mt7996_phy2(dev));
