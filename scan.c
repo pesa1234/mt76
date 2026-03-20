@@ -17,8 +17,10 @@ static void mt76_scan_complete(struct mt76_dev *dev, bool abort)
 	clear_bit(MT76_SCANNING, &phy->state);
 
 	if (dev->scan.chan && phy->main_chandef.chan && phy->offchannel &&
-	    !test_bit(MT76_MCU_RESET, &dev->phy.state))
+	    !test_bit(MT76_MCU_RESET, &dev->phy.state)) {
 		mt76_set_channel(phy, &phy->main_chandef, false);
+		mt76_offchannel_notify(phy, false);
+	}
 	mt76_put_vif_phy_link(phy, dev->scan.vif, dev->scan.mlink);
 	memset(&dev->scan, 0, sizeof(dev->scan));
 	if (!test_bit(MT76_MCU_RESET, &dev->phy.state))
@@ -27,6 +29,10 @@ static void mt76_scan_complete(struct mt76_dev *dev, bool abort)
 
 void mt76_abort_scan(struct mt76_dev *dev)
 {
+	spin_lock_bh(&dev->scan_lock);
+	dev->scan.beacon_wait = false;
+	spin_unlock_bh(&dev->scan_lock);
+
 	cancel_delayed_work_sync(&dev->scan_work);
 	mt76_scan_complete(dev, true);
 }
@@ -63,10 +69,8 @@ mt76_scan_send_probe(struct mt76_dev *dev, struct cfg80211_ssid *ssid)
 
 	rcu_read_lock();
 
-	if (!ieee80211_tx_prepare_skb(phy->hw, vif, skb, band, NULL)) {
-		ieee80211_free_txskb(phy->hw, skb);
+	if (!ieee80211_tx_prepare_skb(phy->hw, vif, skb, band, NULL))
 		goto out;
-	}
 
 	info = IEEE80211_SKB_CB(skb);
 	if (req->no_cck)
@@ -83,18 +87,22 @@ void mt76_scan_rx_beacon(struct mt76_dev *dev, struct ieee80211_channel *chan)
 {
 	struct mt76_phy *phy;
 
+	spin_lock(&dev->scan_lock);
+
 	if (!dev->scan.beacon_wait || dev->scan.beacon_received ||
 	    dev->scan.chan != chan)
-		return;
+		goto out;
 
 	phy = dev->scan.phy;
 	if (!phy)
-		return;
+		goto out;
 
 	dev->scan.beacon_received = true;
 	ieee80211_queue_delayed_work(phy->hw, &dev->scan_work, 0);
+
+out:
+	spin_unlock(&dev->scan_lock);
 }
-EXPORT_SYMBOL_GPL(mt76_scan_rx_beacon);
 
 void mt76_scan_work(struct work_struct *work)
 {
@@ -110,8 +118,10 @@ void mt76_scan_work(struct work_struct *work)
 	if (!phy || !req)
 		return;
 
+	spin_lock_bh(&dev->scan_lock);
 	beacon_rx = dev->scan.beacon_wait && dev->scan.beacon_received;
 	dev->scan.beacon_wait = false;
+	spin_unlock_bh(&dev->scan_lock);
 
 	if (beacon_rx)
 		goto probe;
@@ -124,24 +134,25 @@ void mt76_scan_work(struct work_struct *work)
 	if (dev->scan.chan && phy->num_sta && phy->offchannel) {
 		dev->scan.chan = NULL;
 		mt76_set_channel(phy, &phy->main_chandef, false);
+		mt76_offchannel_notify(phy, false);
 		goto out;
 	}
 
 	dev->scan.chan = req->channels[dev->scan.chan_idx++];
-	cfg80211_chandef_create(&chandef, dev->scan.chan, NL80211_CHAN_HT20);
-	if (phy->main_chandef.chan == dev->scan.chan) {
-		chandef = phy->main_chandef;
-		offchannel = false;
-	}
+	offchannel = mt76_offchannel_chandef(phy, dev->scan.chan, &chandef);
 
+	if (offchannel)
+		mt76_offchannel_notify(phy, true);
 	mt76_set_channel(phy, &chandef, offchannel);
 
 	if (!req->n_ssids)
 		goto out;
 
 	if (chandef.chan->flags & (IEEE80211_CHAN_NO_IR | IEEE80211_CHAN_RADAR)) {
+		spin_lock_bh(&dev->scan_lock);
 		dev->scan.beacon_received = false;
 		dev->scan.beacon_wait = true;
+		spin_unlock_bh(&dev->scan_lock);
 		goto out;
 	}
 
